@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>fann — Artist Profile</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#0B1D51;background:#FFFFFF}
+.wm{position:fixed;inset:0;pointer-events:none;z-index:50;overflow:hidden}
+.wm-svg{width:100%;height:100%;position:absolute;inset:0}
+.pg{background:#FFFFFF;min-height:100vh;display:flex;flex-direction:column;position:relative;z-index:1}
+.navbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#FFFFFF;border-bottom:0.5px solid #E2EAF5;position:sticky;top:0;z-index:50}
+.logo{font-size:16px;font-weight:700;color:#0B1D51;letter-spacing:-.3px}.logo span{color:#2B52E8}
+.nav-right{display:flex;align-items:center;gap:10px}
+.nav-icon{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;color:#4B5A7A;cursor:pointer;position:relative;border:0.5px solid #E2EAF5}
+.notif-dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:#EF4444;border:1.5px solid #FFFFFF}
+.nav-av-art{width:34px;height:34px;border-radius:50%;background:#EEF2FE;color:#1E3A8A;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:0.5px solid #93ADE8}
+.nav-av-bkr{width:34px;height:34px;border-radius:50%;background:#E0F2FE;color:#075985;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:0.5px solid #38BDF8}
+.nav-av-admin{width:34px;height:34px;border-radius:50%;background:#F4F7FF;color:#0B1D51;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;border:0.5px solid #C5D3EE}
+.admin-badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:8px;background:#FEF3C7;color:#92400E;border:0.5px solid #F59E0B}
+.topbar{display:flex;align-items:center;gap:10px;padding:11px 16px;background:#FFFFFF;border-bottom:0.5px solid #E2EAF5}
+.back{display:flex;align-items:center;gap:6px;font-size:13px;color:#4B5A7A;cursor:pointer}
+.topbar-title{font-size:16px;font-weight:600;flex:1;color:#0B1D51}
+/* cards */
+.card{background:#FFFFFF;border:0.5px solid #E2EAF5;border-radius:14px;overflow:hidden;cursor:pointer}
+/* chips */
+.chip{flex-shrink:0;padding:5px 13px;border-radius:20px;font-size:12px;border:0.5px solid #DDE5F5;cursor:pointer;background:#FFFFFF;color:#4B5A7A}
+.chip.on-art{background:#EEF2FE;color:#1E3A8A;border-color:#93ADE8;font-weight:600}
+.chip.on-bkr{background:#E0F2FE;color:#075985;border-color:#38BDF8;font-weight:600}
+.chip.on{background:#EEF2FE;color:#1E3A8A;border-color:#93ADE8;font-weight:600}
+/* search */
+.search-wrap{display:flex;align-items:center;gap:8px;padding:8px 12px;border:0.5px solid #DDE5F5;border-radius:10px;background:#F4F7FF}
+.search-wrap input{flex:1;border:none;outline:none;font-size:13px;background:transparent;color:#0B1D51}
+.search-wrap i{color:#8A9BC0;font-size:15px}
+/* bottom nav */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#FFFFFF;border-top:0.5px solid #E2EAF5;display:flex;z-index:60}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 4px 10px;cursor:pointer;font-size:10px;color:#8A9BC0;gap:3px;position:relative}
+.bn-item.active-art{color:#2B52E8}
+.bn-item.active-bkr{color:#0284C7}
+.bn-item i{font-size:20px}
+.msg-badge{position:absolute;top:6px;right:calc(50% - 18px);background:#EF4444;color:#fff;font-size:9px;padding:1px 4px;border-radius:8px;font-weight:600}
+/* buttons */
+.btn-primary-art{padding:11px;background:#2B52E8;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-primary-bkr{padding:11px;background:#0B1D51;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-ghost{padding:11px;background:transparent;color:#0B1D51;border:1.5px solid #0B1D51;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-sm-approve{padding:4px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;border:0.5px solid #86EFAC;background:#DCFCE7;color:#166534}
+.btn-sm-reject{padding:4px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;border:0.5px solid #FCA5A5;background:#FEF2F2;color:#7F1D1D}
+.btn-sm-suspend{padding:4px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;border:0.5px solid #FCD34D;background:#FEF3C7;color:#92400E}
+.btn-sm-ghost{padding:4px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;border:0.5px solid #C5D3EE;background:#F4F7FF;color:#4B5A7A}
+/* status badges */
+.s-active{background:#DCFCE7;color:#166534;font-size:10px;font-weight:600;padding:3px 9px;border-radius:8px}
+.s-pending{background:#FEF3C7;color:#92400E;font-size:10px;font-weight:600;padding:3px 9px;border-radius:8px}
+.s-rejected{background:#FEF2F2;color:#7F1D1D;font-size:10px;font-weight:600;padding:3px 9px;border-radius:8px}
+.s-suspended{background:#F1F5F9;color:#334155;font-size:10px;font-weight:600;padding:3px 9px;border-radius:8px}
+/* section */
+.section{padding:14px 16px 0}
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sec-title{font-size:13px;font-weight:700;color:#0B1D51}
+.sec-link-art{font-size:12px;color:#2B52E8;cursor:pointer;font-weight:500}
+.sec-link-bkr{font-size:12px;color:#0284C7;cursor:pointer;font-weight:500}
+.group-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#8A9BC0;padding:10px 16px 4px;background:#F4F7FF}
+/* tab bar */
+.tab-bar{display:flex;gap:4px;padding:8px 16px 0;border-bottom:0.5px solid #E2EAF5;background:#FFFFFF;position:sticky;top:0;z-index:100;flex-wrap:wrap}
+.tab{font-size:11px;padding:5px 10px;border-radius:8px;cursor:pointer;border:0.5px solid #E2EAF5;color:#8A9BC0;background:transparent;white-space:nowrap}
+.tab.on{background:#F4F7FF;color:#0B1D51;font-weight:600;border-color:#C5D3EE}
+/* toast */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#0B1D51;color:#fff;font-size:12px;padding:8px 16px;border-radius:20px;z-index:200;opacity:0;transition:opacity .2s;white-space:nowrap;pointer-events:none}
+.toast.show{opacity:1}
+/* available badge */
+.avail-badge{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:5px 12px;border-radius:20px;background:#FFFFFF;color:#166534;border:1.5px solid #86EFAC}
+.avail-dot{width:6px;height:6px;border-radius:50%;background:#22C55E}
+/* skel */
+.skel{background:#F4F7FF;border-radius:6px;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+/* tile grid */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px 100px}
+.tile{background:#FFFFFF;border:0.5px solid #E2EAF5;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer}
+.tile.hidden{display:none}
+.tile-img-wrap{position:relative;width:100%;padding-top:40%}
+.tile-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+div.tile-img{position:absolute;inset:0}
+.tile-cat-badge{position:absolute;bottom:6px;left:6px;font-size:10px;font-weight:600;padding:3px 8px;border-radius:8px}
+.tile-body{flex:1;padding:8px 10px 10px;display:flex;flex-direction:column;gap:3px}
+.tile-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#0B1D51}
+.tile-sub{font-size:10px;color:#4B5A7A}
+.tile-tag{font-size:10px;color:#8A9BC0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.tile-footer{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
+.tile-activity{font-size:10px;color:#166534;display:flex;align-items:center;gap:3px}
+.tile-msg-art{width:28px;height:28px;border-radius:50%;background:#2B52E8;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.tile-msg-bkr{width:28px;height:28px;border-radius:50%;background:#0284C7;color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.page-dots{display:flex;gap:5px;align-items:center}
+.dot{width:6px;height:6px;border-radius:50%;background:#DDE5F5;cursor:pointer;transition:all .15s}
+.dot.on-art{background:#2B52E8;width:16px;border-radius:3px}
+.dot.on-bkr{background:#0284C7;width:16px;border-radius:3px}
+.results-meta{padding:10px 16px 4px;font-size:12px;color:#8A9BC0}
+/* action bar */
+.action-bar{position:fixed;bottom:64px;left:0;right:0;background:#FFFFFF;border-top:0.5px solid #E2EAF5;padding:10px 16px;display:flex;gap:8px;z-index:55}
+/* toggle */
+.tog{width:40px;height:22px;border-radius:11px;position:relative;cursor:pointer;flex-shrink:0;transition:background .15s}
+.tog.on{background:#2B52E8}
+.tog.off{background:#DDE5F5}
+.tog-thumb{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.tog.on .tog-thumb{left:20px}
+.tog.off .tog-thumb{left:2px}
+
+.pb-body{padding-bottom:80px}
+/* ── Phone frame for desktop preview ───────────────── */
+html{background:#DDE5F5;min-height:100vh}
+body{
+  display:flex;justify-content:center;align-items:flex-start;
+  padding:24px 0 48px;min-height:100vh;background:#DDE5F5
+}
+#phone{
+  width:390px;flex-shrink:0;
+  background:#FFFFFF;
+  border-radius:44px;
+  box-shadow:0 24px 80px rgba(11,29,81,.18),0 0 0 1px rgba(11,29,81,.06);
+  overflow:hidden;
+  position:relative;
+  /* scroll container */
+  height:844px;
+  display:flex;flex-direction:column;
+}
+/* notch bar */
+#notch{
+  height:44px;flex-shrink:0;
+  background:#FFFFFF;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;
+  border-bottom:0.5px solid #E2EAF5;
+}
+#notch-time{font-size:13px;font-weight:600;color:#0B1D51}
+#notch-icons{display:flex;gap:5px;align-items:center;color:#0B1D51;font-size:12px}
+/* scrollable content area */
+#scroll{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;scrollbar-width:none}
+#scroll::-webkit-scrollbar{display:none}
+/* re-anchor fixed elements inside the phone */
+.bottom-nav,.action-bar,.toast,.tab-bar-fixed{
+  position:sticky!important;
+  bottom:0!important;left:auto!important;right:auto!important;
+  width:100%!important;
+}
+/* watermark stays fixed inside scroll */
+.wm{position:absolute!important;z-index:50}
+/* sticky navbars work naturally inside scroll */
+@media(max-width:430px){
+  html{background:#FFFFFF;padding:0}
+  body{padding:0;display:block}
+  #phone{width:100%;border-radius:0;height:auto;box-shadow:none}
+  #notch{display:none}
+  #scroll{height:auto;overflow:visible}
+  .bottom-nav,.action-bar{position:fixed!important}
+  .wm{position:fixed!important}
+}
+
+</style>
+</head>
+<body>
+<div id="phone">
+<div id="notch">
+  <span id="notch-time">9:41</span>
+  <div id="notch-icons">
+    <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="3" width="3" height="8" rx="1" fill="#0B1D51"/><rect x="4.5" y="2" width="3" height="9" rx="1" fill="#0B1D51"/><rect x="9" y="0" width="3" height="11" rx="1" fill="#0B1D51"/><rect x="13.5" y="0" width="2.5" height="11" rx="1" fill="#C5D3EE"/></svg>
+    <svg width="15" height="11" viewBox="0 0 15 11" fill="none"><path d="M7.5 2.5C9.8 2.5 11.9 3.5 13.3 5.1L14.8 3.5C12.9 1.3 10.3 0 7.5 0S2.1 1.3 0.2 3.5L1.7 5.1C3.1 3.5 5.2 2.5 7.5 2.5Z" fill="#0B1D51"/><path d="M7.5 5.5C9 5.5 10.4 6.1 11.4 7.1L12.9 5.5C11.4 3.9 9.6 3 7.5 3S3.6 3.9 2.1 5.5L3.6 7.1C4.6 6.1 6 5.5 7.5 5.5Z" fill="#0B1D51"/><circle cx="7.5" cy="9.5" r="1.5" fill="#0B1D51"/></svg>
+    <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#0B1D51" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#0B1D51"/><path d="M23 4.5V7.5C23.8 7.2 24.5 6.4 24.5 6S23.8 4.8 23 4.5Z" fill="#0B1D51" fill-opacity=".4"/></svg>
+  </div>
+</div>
+<div id="scroll">
+<div class="wm" aria-hidden="true">
+<svg class="wm-svg" viewBox="0 0 420 900" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!-- music notes -->
+  <text x="18" y="120" font-size="28" fill="#AABDE8" opacity=".48">♪</text>
+  <text x="370" y="200" font-size="22" fill="#AABDE8" opacity=".2">♫</text>
+  <text x="60" y="380" font-size="18" fill="#AABDE8" opacity=".40">♩</text>
+  <text x="340" y="480" font-size="24" fill="#AABDE8" opacity=".2">♬</text>
+  <text x="30" y="620" font-size="20" fill="#AABDE8" opacity=".36">♪</text>
+  <text x="380" y="700" font-size="16" fill="#AABDE8" opacity=".40">♫</text>
+  <text x="200" y="860" font-size="22" fill="#AABDE8" opacity=".36">♩</text>
+  <!-- microphone left -->
+  <rect x="22" y="180" width="16" height="28" rx="8" stroke="#AABDE8" stroke-width="2" opacity=".40"/>
+  <line x1="30" y1="208" x2="30" y2="228" stroke="#AABDE8" stroke-width="2" opacity=".40"/>
+  <line x1="22" y1="228" x2="38" y2="228" stroke="#AABDE8" stroke-width="2" opacity=".40"/>
+  <!-- oud right -->
+  <ellipse cx="390" cy="330" rx="18" ry="22" stroke="#AABDE8" stroke-width="1.5" opacity=".40"/>
+  <line x1="390" y1="308" x2="390" y2="265" stroke="#AABDE8" stroke-width="1.5" opacity=".40"/>
+  <ellipse cx="390" cy="262" rx="6" ry="4" stroke="#AABDE8" stroke-width="1.5" opacity=".40"/>
+  <!-- drum lower left -->
+  <ellipse cx="38" cy="520" rx="22" ry="8" stroke="#AABDE8" stroke-width="1.5" opacity=".38"/>
+  <rect x="16" y="520" width="44" height="30" rx="3" stroke="#AABDE8" stroke-width="1.5" opacity=".38"/>
+  <ellipse cx="38" cy="550" rx="22" ry="8" stroke="#AABDE8" stroke-width="1.5" opacity=".38"/>
+  <!-- dancer right middle -->
+  <circle cx="385" cy="555" r="8" stroke="#AABDE8" stroke-width="1.5" opacity=".36"/>
+  <line x1="385" y1="563" x2="385" y2="595" stroke="#AABDE8" stroke-width="1.5" opacity=".36"/>
+  <line x1="385" y1="575" x2="370" y2="588" stroke="#AABDE8" stroke-width="1.5" opacity=".36"/>
+  <line x1="385" y1="575" x2="400" y2="585" stroke="#AABDE8" stroke-width="1.5" opacity=".36"/>
+  <line x1="385" y1="595" x2="374" y2="614" stroke="#AABDE8" stroke-width="1.5" opacity=".36"/>
+  <line x1="385" y1="595" x2="396" y2="614" stroke="#AABDE8" stroke-width="1.5" opacity=".36"/>
+  <!-- church outline bottom left -->
+  <rect x="20" y="760" width="40" height="55" stroke="#AABDE8" stroke-width="1.5" opacity=".30"/>
+  <polygon points="40,740 20,760 60,760" stroke="#AABDE8" stroke-width="1.5" opacity=".30"/>
+  <line x1="40" y1="730" x2="40" y2="740" stroke="#AABDE8" stroke-width="2" opacity=".30"/>
+  <rect x="30" y="790" width="20" height="25" stroke="#AABDE8" stroke-width="1.5" opacity=".30"/>
+</svg></div>
+
+<div class="pg pb-body" style="padding-bottom:140px">
+  <div class="topbar">
+    <div class="back"><i class="ti ti-arrow-left" style="font-size:16px"></i> Search results</div>
+    <div style="display:flex;gap:8px">
+      <div id="save-btn" onclick="toggleSave()" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1.5px solid #EF4444;color:#EF4444;cursor:pointer;background:#FEF2F2"><i class="ti ti-heart"></i></div>
+      <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:0.5px solid #E2EAF5;color:#4B5A7A;cursor:pointer"><i class="ti ti-share"></i></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px 16px;background:#FFFFFF;border-bottom:0.5px solid #E2EAF5">
+    <div style="border-radius:14px;overflow:hidden;height:180px;border:0.5px solid #E2EAF5"><img style="width:100%;height:100%;object-fit:cover;display:block" src="data:image/jpeg;base64,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" alt="Nour Khalil"/></div>
+    <div style="border-radius:14px;overflow:hidden;height:180px;border:0.5px solid #E2EAF5;background:#F4F7FF;display:flex;align-items:center;justify-content:center"><i class="ti ti-microphone" style="font-size:36px;color:#C5D3EE"></i></div>
+  </div>
+  <div style="background:#FFFFFF;padding:14px 16px 16px;border-bottom:0.5px solid #E2EAF5">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
+          <span style="font-size:20px;font-weight:700;color:#0B1D51">Nour Khalil</span>
+          <i class="ti ti-rosette-discount-check" style="font-size:18px;color:#2B52E8"></i>
+        </div>
+        <div style="font-size:12px;color:#4B5A7A;display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;border:1.5px solid #FF8A7A;color:#C23B22;background:#FFF5F3">Live Singer</span>
+          <i class="ti ti-map-pin" style="font-size:12px"></i> Beirut, Lebanon
+        </div>
+      </div>
+      <div class="avail-badge"><div class="avail-dot"></div> Available</div>
+    </div>
+    <div style="display:flex;gap:0;border:0.5px solid #E2EAF5;border-radius:12px;overflow:hidden;margin-bottom:14px">
+      <div style="flex:1;padding:10px 0;text-align:center;border-right:0.5px solid #E2EAF5">
+        <i class="ti ti-star" style="font-size:16px;color:#2B52E8;display:block;margin-bottom:3px"></i>
+        <div style="font-size:16px;font-weight:700;color:#0B1D51">4.9</div><div style="font-size:10px;color:#8A9BC0">Rating</div>
+      </div>
+      <div style="flex:1;padding:10px 0;text-align:center;border-right:0.5px solid #E2EAF5">
+        <i class="ti ti-users" style="font-size:16px;color:#2B52E8;display:block;margin-bottom:3px"></i>
+        <div style="font-size:16px;font-weight:700;color:#0B1D51">128</div><div style="font-size:10px;color:#8A9BC0">Reviews</div>
+      </div>
+      <div style="flex:1;padding:10px 0;text-align:center;border-right:0.5px solid #E2EAF5">
+        <i class="ti ti-calendar-event" style="font-size:16px;color:#2B52E8;display:block;margin-bottom:3px"></i>
+        <div style="font-size:16px;font-weight:700;color:#0B1D51">210</div><div style="font-size:10px;color:#8A9BC0">Bookings</div>
+      </div>
+      <div style="flex:1;padding:10px 0;text-align:center">
+        <i class="ti ti-clock" style="font-size:16px;color:#2B52E8;display:block;margin-bottom:3px"></i>
+        <div style="font-size:16px;font-weight:700;color:#0B1D51">7+</div><div style="font-size:10px;color:#8A9BC0">Yrs Exp</div>
+      </div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="sec-title" style="margin-bottom:8px">Media</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="background:#F4F7FF;border:0.5px solid #E2EAF5;border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;cursor:pointer">
+        <i class="ti ti-photo" style="font-size:20px;color:#2B52E8"></i><div><div style="font-size:12px;font-weight:600;color:#0B1D51">Photos</div><div style="font-size:11px;color:#8A9BC0">24</div></div>
+      </div>
+      <div style="background:#F4F7FF;border:0.5px solid #E2EAF5;border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;cursor:pointer">
+        <i class="ti ti-player-play" style="font-size:20px;color:#2B52E8"></i><div><div style="font-size:12px;font-weight:600;color:#0B1D51">Videos</div><div style="font-size:11px;color:#8A9BC0">12</div></div>
+      </div>
+      <div style="background:#F4F7FF;border:0.5px solid #E2EAF5;border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;cursor:pointer">
+        <i class="ti ti-player-record" style="font-size:20px;color:#2B52E8"></i><div><div style="font-size:12px;font-weight:600;color:#0B1D51">Reels</div><div style="font-size:11px;color:#8A9BC0">8</div></div>
+      </div>
+      <div style="background:#F4F7FF;border:0.5px solid #E2EAF5;border-radius:12px;padding:12px;display:flex;align-items:center;gap:10px;cursor:pointer">
+        <i class="ti ti-music" style="font-size:20px;color:#2B52E8"></i><div><div style="font-size:12px;font-weight:600;color:#0B1D51">Audio</div><div style="font-size:11px;color:#8A9BC0">15</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="section" style="margin-top:16px">
+    <div class="sec-title" style="margin-bottom:8px">About Nour</div>
+    <div style="font-size:13px;color:#4B5A7A;line-height:1.7">Versatile Lebanese singer performing Arabic, English and Lebanese classics with a modern touch. Bringing soul, elegance and energy to every stage.</div>
+  </div>
+  <div class="section" style="margin-top:14px">
+    <div class="sec-title" style="margin-bottom:8px">Genres</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <span class="chip">Arabic</span><span class="chip">Lebanese</span><span class="chip">Pop</span><span class="chip">Jazz</span><span class="chip">Lounge</span>
+    </div>
+  </div>
+  <div class="section" style="margin-top:14px">
+    <div class="sec-title" style="margin-bottom:8px">Connect</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:#FFFFFF;border:0.5px solid #E2EAF5;border-radius:12px;cursor:pointer">
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#F9CE34,#EE2A7B,#6228D7);display:flex;align-items:center;justify-content:center"><i class="ti ti-brand-instagram" style="color:#fff;font-size:16px"></i></div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500;color:#0B1D51">Instagram</div><div style="font-size:11px;color:#8A9BC0">@nour.khalil.music</div></div>
+        <i class="ti ti-chevron-right" style="font-size:14px;color:#8A9BC0"></i>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:#FFFFFF;border:0.5px solid #E2EAF5;border-radius:12px;cursor:pointer">
+        <div style="width:32px;height:32px;border-radius:50%;background:#FF0000;display:flex;align-items:center;justify-content:center"><i class="ti ti-brand-youtube" style="color:#fff;font-size:16px"></i></div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500;color:#0B1D51">YouTube</div><div style="font-size:11px;color:#8A9BC0">Nour Khalil Official</div></div>
+        <i class="ti ti-chevron-right" style="font-size:14px;color:#8A9BC0"></i>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;background:#FFFFFF;border:0.5px solid #E2EAF5;border-radius:12px;cursor:pointer">
+        <div style="width:32px;height:32px;border-radius:50%;background:#1DB954;display:flex;align-items:center;justify-content:center"><i class="ti ti-brand-spotify" style="color:#fff;font-size:16px"></i></div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500;color:#0B1D51">Spotify</div><div style="font-size:11px;color:#8A9BC0">Nour Khalil</div></div>
+        <i class="ti ti-chevron-right" style="font-size:14px;color:#8A9BC0"></i>
+      </div>
+    </div>
+  </div>
+  <div style="height:16px"></div>
+</div>
+<div class="bn-item active-bkr"><i class="ti ti-search"></i>Search</div>
+  <div class="bn-item"><i class="ti ti-calendar-event"></i>Bookings</div>
+  <div class="bn-item"><i class="ti ti-message-circle"></i>Messages</div>
+  <div class="bn-item"><i class="ti ti-user"></i>Profile</div>
+</div>
+<script>
+let saved=true;
+function toggleSave(){
+  saved=!saved;
+  const b=document.getElementById('save-btn');
+  b.style.background=saved?'#FEF2F2':'#FFFFFF';
+  b.style.color=saved?'#EF4444':'#4B5A7A';
+  b.style.borderColor=saved?'#EF4444':'#E2EAF5';
+}
+</script>
+</div>
+<div class="action-bar">
+  <button class="btn-ghost" style="flex:1"><i class="ti ti-message-circle" style="font-size:15px"></i> Message</button>
+  <button class="btn-primary-bkr" style="flex:1"><i class="ti ti-calendar" style="font-size:15px"></i> Check Availability</button>
+</div>
+<div class="bottom-nav">
+  <div class="bn-item"><i class="ti ti-home"></i>Home</div>
+  <div class="toast" id="toast"></div>
+</div>
+</body></html>

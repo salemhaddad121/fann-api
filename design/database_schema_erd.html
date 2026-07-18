@@ -1,0 +1,233 @@
+
+<h2 class="sr-only">Database schema entity relationship diagrams split into core entities and interaction tables</h2>
+<style>
+.erd-section { margin: 1.5rem 0 0.25rem; font-size: 12px; font-weight: 500; color: var(--color-text-secondary); padding: 0 2px; }
+.erd-wrap { overflow-x: auto; width: 100%; }
+.erd-wrap svg { max-width: 100%; height: auto; }
+[id^="erd"] svg.erDiagram .divider path { stroke-opacity: 0.5; }
+[id^="erd"] svg.erDiagram .row-rect-odd path,
+[id^="erd"] svg.erDiagram .row-rect-odd rect,
+[id^="erd"] svg.erDiagram .row-rect-even path,
+[id^="erd"] svg.erDiagram .row-rect-even rect { stroke: none !important; }
+</style>
+
+<div class="erd-section">Core entities — users, profiles, media &amp; availability</div>
+<div class="erd-wrap" id="erd1"></div>
+
+<div class="erd-section" style="margin-top:2rem">Interactions &amp; admin — messages, payments, flags, audit</div>
+<div class="erd-wrap" id="erd2"></div>
+
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+  },
+});
+
+const diagram1 = `erDiagram
+    users {
+        uuid id PK
+        varchar account_code "PLN-000001 or ART-000001"
+        varchar role "artist | planner | admin"
+        varchar status "registered | profile_complete | pending_payment | pending_approval | approved | rejected | suspended | renewal_due"
+        varchar email
+        varchar phone
+        varchar password_hash
+        varchar google_id
+        varchar apple_id
+        uuid approved_by FK "admin user id"
+        timestamp approved_at
+        timestamp renewal_due_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    artist_profiles {
+        uuid id PK
+        uuid user_id FK
+        varchar display_name
+        int category_id FK
+        text bio
+        varchar city
+        int price_min
+        int price_max
+        text languages "JSON array"
+        varchar website_url
+        varchar instagram_url
+        varchar youtube_url
+        timestamp created_at
+        timestamp updated_at
+    }
+    planner_profiles {
+        uuid id PK
+        uuid user_id FK
+        varchar display_name
+        text event_types "JSON array"
+        varchar city
+        text bio
+        timestamp created_at
+        timestamp updated_at
+    }
+    categories {
+        int id PK
+        varchar name
+        varchar slug
+    }
+    media {
+        uuid id PK
+        uuid user_id FK
+        varchar type "photo | video"
+        varchar s3_key
+        varchar cdn_url
+        varchar thumbnail_url
+        int duration_sec "videos only, max 60"
+        int sort_order
+        timestamp created_at
+    }
+    id_documents {
+        uuid id PK
+        uuid user_id FK
+        varchar s3_key "private bucket"
+        varchar status "pending | approved | rejected"
+        varchar rejection_reason
+        uuid reviewed_by FK "admin user id"
+        timestamp reviewed_at
+        timestamp uploaded_at
+    }
+    availability_blocks {
+        uuid id PK
+        uuid artist_id FK
+        date start_date
+        date end_date
+        varchar note
+        timestamp created_at
+    }
+    users ||--o| artist_profiles : "has"
+    users ||--o| planner_profiles : "has"
+    categories ||--o{ artist_profiles : "classifies"
+    users ||--o{ media : "uploads"
+    users ||--o| id_documents : "submits"
+    users ||--o{ availability_blocks : "blocks"`;
+
+const diagram2 = `erDiagram
+    users {
+        uuid id PK
+        varchar account_code
+        varchar role
+        varchar status
+    }
+    conversations {
+        uuid id PK
+        uuid artist_id FK
+        uuid planner_id FK
+        timestamp last_message_at
+        timestamp created_at
+    }
+    messages {
+        uuid id PK
+        uuid conversation_id FK
+        uuid sender_id FK
+        text body
+        timestamp read_at
+        timestamp created_at
+    }
+    payments {
+        uuid id PK
+        uuid planner_id FK
+        decimal amount_usd
+        varchar transfer_service "OMT | Wish | WesternUnion | other"
+        date period_start
+        date period_end
+        varchar status "pending | confirmed | rejected"
+        uuid confirmed_by FK "admin user id"
+        timestamp confirmed_at
+        varchar admin_note
+        timestamp created_at
+    }
+    flags {
+        uuid id PK
+        uuid reporter_id FK
+        uuid flagged_user_id FK "nullable"
+        uuid flagged_msg_id FK "nullable"
+        varchar reason
+        varchar status "open | dismissed | actioned"
+        uuid reviewed_by FK "admin user id"
+        timestamp reviewed_at
+        timestamp created_at
+    }
+    admin_logs {
+        uuid id PK
+        uuid admin_id FK
+        varchar action
+        varchar target_type "user | payment | flag | message"
+        uuid target_id
+        text note
+        timestamp created_at
+    }
+    notifications {
+        uuid id PK
+        uuid user_id FK
+        varchar type "message | approval | rejection | renewal_due | flag_actioned"
+        varchar title
+        varchar body
+        timestamp read_at
+        timestamp created_at
+    }
+    users ||--o{ conversations : "participates in"
+    conversations ||--o{ messages : "contains"
+    users ||--o{ messages : "sends"
+    users ||--o{ payments : "makes"
+    users ||--o{ flags : "reports"
+    users ||--o{ admin_logs : "audited by"
+    users ||--o{ notifications : "receives"`;
+
+function styleERD(container) {
+  container.querySelectorAll('svg.erDiagram .node').forEach(node => {
+    const firstPath = node.querySelector('path[d]');
+    if (!firstPath) return;
+    const d = firstPath.getAttribute('d');
+    const nums = d.match(/-?[\d.]+/g)?.map(Number);
+    if (!nums || nums.length < 8) return;
+    const xs = [nums[0], nums[2], nums[4], nums[6]];
+    const ys = [nums[1], nums[3], nums[5], nums[7]];
+    const x = Math.min(...xs), y = Math.min(...ys);
+    const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', x); rect.setAttribute('y', y);
+    rect.setAttribute('width', w); rect.setAttribute('height', h);
+    rect.setAttribute('rx', '8');
+    for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+      if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+    }
+    firstPath.replaceWith(rect);
+  });
+  container.querySelectorAll('svg.erDiagram .row-rect-odd path, svg.erDiagram .row-rect-even path').forEach(p => {
+    p.setAttribute('stroke', 'none');
+  });
+}
+
+try {
+  const { svg: svg1 } = await mermaid.render('erd-svg-1', diagram1);
+  document.getElementById('erd1').innerHTML = svg1;
+  styleERD(document.getElementById('erd1'));
+} catch(e) {
+  document.getElementById('erd1').innerHTML = '<p style="color:var(--color-text-danger);font-size:13px">ERD 1 render error: ' + e.message + '</p>';
+}
+
+try {
+  const { svg: svg2 } = await mermaid.render('erd-svg-2', diagram2);
+  document.getElementById('erd2').innerHTML = svg2;
+  styleERD(document.getElementById('erd2'));
+} catch(e) {
+  document.getElementById('erd2').innerHTML = '<p style="color:var(--color-text-danger);font-size:13px">ERD 2 render error: ' + e.message + '</p>';
+}
+</script>

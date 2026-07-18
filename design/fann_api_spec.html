@@ -1,0 +1,1745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Fann API Reference — v1</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap');
+
+:root {
+  --navy:   #0B1D51;
+  --blue:   #2B52E8;
+  --sky:    #0284C7;
+  --ink:    #0F172A;
+  --slate:  #334155;
+  --muted:  #64748B;
+  --border: #E2E8F0;
+  --surface:#F8FAFC;
+  --white:  #FFFFFF;
+  --get:    #059669;  --get-bg:  #D1FAE5;
+  --post:   #2B52E8;  --post-bg: #DBEAFE;
+  --put:    #D97706;  --put-bg:  #FEF3C7;
+  --patch:  #7C3AED;  --patch-bg:#EDE9FE;
+  --delete: #DC2626;  --delete-bg:#FEE2E2;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+  --display: 'Syne', sans-serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--sans);color:var(--ink);background:var(--white);display:flex;min-height:100vh;font-size:14px;line-height:1.6}
+
+/* ── SIDEBAR ── */
+aside{
+  width:260px;min-width:260px;background:var(--navy);color:#CBD5E1;
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:0 0 40px;
+  display:flex;flex-direction:column;flex-shrink:0;
+}
+aside::-webkit-scrollbar{width:4px}
+aside::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+
+.sidebar-logo{
+  padding:24px 20px 20px;border-bottom:1px solid #1E3A6E;
+  font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:-0.5px;
+  color:var(--white);display:flex;align-items:center;gap:10px;
+}
+.sidebar-logo span{font-size:10px;font-family:var(--mono);font-weight:400;color:#7DD3FC;
+  background:#0F2A60;padding:2px 8px;border-radius:10px;letter-spacing:0.5px;margin-left:4px;}
+
+.nav-section{padding:16px 20px 4px;font-size:10px;font-weight:600;letter-spacing:1.2px;
+  text-transform:uppercase;color:#475569;}
+
+.nav-section:first-of-type{padding-top:20px}
+
+.nav-link{
+  display:flex;align-items:center;gap:8px;padding:6px 20px;
+  text-decoration:none;color:#94A3B8;font-size:12.5px;
+  transition:all .15s;border-left:2px solid transparent;
+}
+.nav-link:hover{color:var(--white);background:#0F2A60;border-left-color:#2B52E8}
+.nav-link .nm{font-size:9px;font-family:var(--mono);font-weight:600;padding:1px 5px;border-radius:3px;min-width:44px;text-align:center}
+.nm-get{background:var(--get-bg);color:var(--get)}
+.nm-post{background:var(--post-bg);color:var(--post)}
+.nm-put{background:var(--put-bg);color:var(--put)}
+.nm-patch{background:var(--patch-bg);color:var(--patch)}
+.nm-delete{background:var(--delete-bg);color:var(--delete)}
+
+/* ── MAIN ── */
+main{flex:1;max-width:900px;padding:48px 56px;overflow-x:hidden}
+
+.doc-header{margin-bottom:56px;padding-bottom:32px;border-bottom:2px solid var(--border)}
+.doc-header h1{font-family:var(--display);font-size:38px;font-weight:800;color:var(--navy);letter-spacing:-1px;line-height:1.1}
+.doc-header p{color:var(--muted);margin-top:12px;font-size:15px;max-width:520px}
+.meta-row{display:flex;gap:24px;margin-top:20px;flex-wrap:wrap}
+.meta-item{display:flex;align-items:center;gap:8px;font-size:13px}
+.meta-item strong{color:var(--slate)}
+.meta-item code{font-family:var(--mono);background:var(--surface);border:1px solid var(--border);
+  padding:2px 8px;border-radius:4px;font-size:12px;color:var(--blue)}
+
+/* Info box */
+.info-box{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:16px 20px;margin-bottom:40px}
+.info-box h3{font-family:var(--display);font-size:13px;font-weight:700;color:#1E40AF;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+.info-box p,.info-box li{font-size:13px;color:#1E3A8A;line-height:1.6}
+.info-box ul{padding-left:16px}
+.info-box li{margin-bottom:4px}
+.info-box code{font-family:var(--mono);font-size:11px;background:#DBEAFE;padding:1px 5px;border-radius:3px}
+
+/* ── SECTION ── */
+.section{margin-bottom:64px}
+.section-title{
+  font-family:var(--display);font-size:22px;font-weight:800;color:var(--navy);
+  margin-bottom:8px;padding-bottom:12px;border-bottom:2px solid var(--navy);
+  display:flex;align-items:center;gap:12px;
+}
+.section-count{font-size:11px;font-family:var(--mono);background:var(--navy);color:var(--white);
+  padding:2px 9px;border-radius:10px;font-weight:400}
+
+/* ── ENDPOINT ── */
+.endpoint{border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px}
+
+.ep-header{
+  display:flex;align-items:center;gap:12px;padding:14px 18px;
+  background:var(--surface);border-bottom:1px solid var(--border);
+}
+.method{font-family:var(--mono);font-size:11px;font-weight:700;padding:3px 10px;
+  border-radius:4px;min-width:56px;text-align:center;letter-spacing:.3px}
+.m-get{background:var(--get-bg);color:var(--get)}
+.m-post{background:var(--post-bg);color:var(--post)}
+.m-put{background:var(--put-bg);color:var(--put)}
+.m-patch{background:var(--patch-bg);color:var(--patch)}
+.m-delete{background:var(--delete-bg);color:var(--delete)}
+
+.ep-path{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ink)}
+.ep-path .param{color:var(--blue)}
+.ep-desc{color:var(--muted);font-size:13px;margin-left:auto}
+
+.auth-badge{font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:10px;
+  letter-spacing:.3px;white-space:nowrap;flex-shrink:0}
+.badge-pub{background:#F0FDF4;color:#166534;border:1px solid #BBF7D0}
+.badge-auth{background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE}
+.badge-admin{background:#FFF7ED;color:#C2410C;border:1px solid #FED7AA}
+
+.ep-body{padding:18px}
+
+/* Sub-sections inside endpoint */
+.ep-section{margin-bottom:16px}
+.ep-section:last-child{margin-bottom:0}
+.ep-section-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.8px;margin-bottom:8px}
+
+/* Param / field tables */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.6px;padding:6px 10px;background:var(--surface);border-bottom:1px solid var(--border)}
+td{padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--slate)}
+tr:last-child td{border-bottom:none}
+td code{font-family:var(--mono);font-size:11.5px;color:var(--blue);background:#EFF6FF;
+  padding:1px 5px;border-radius:3px}
+.req-badge{font-size:9px;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;
+  padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap}
+.opt-badge{font-size:9px;background:#F8FAFC;color:#64748B;border:1px solid #E2E8F0;
+  padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap}
+.type{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+/* Code blocks */
+pre{background:#0F172A;color:#E2E8F0;padding:16px;border-radius:8px;
+  overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6;margin-top:6px}
+pre .k{color:#7DD3FC}   /* key */
+pre .s{color:#86EFAC}   /* string */
+pre .n{color:#FCA5A5}   /* number/bool */
+pre .c{color:#94A3B8}   /* comment */
+pre .p{color:#CBD5E1}   /* punctuation */
+
+/* Error table */
+.error-grid{display:grid;grid-template-columns:auto 1fr;gap:1px;background:var(--border);
+  border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:6px}
+.eg-cell{background:var(--white);padding:7px 12px;font-size:12.5px}
+.eg-head{background:var(--surface);font-size:10px;font-weight:700;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px}
+.eg-code{font-family:var(--mono);font-weight:600}
+.eg-4xx{color:#DC2626}.eg-5xx{color:#D97706}
+
+/* Divider */
+.note{background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:10px 14px;
+  font-size:12.5px;color:#92400E;margin-top:10px}
+.note strong{font-weight:600}
+
+/* Anchor offset fix */
+.anchor{scroll-margin-top:20px}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ SIDEBAR ═══════════════════════════════ -->
+<aside>
+  <div class="sidebar-logo">Fann <span>API v1</span></div>
+
+  <div class="nav-section">Auth</div>
+  <a class="nav-link" href="#auth-register"><span class="nm nm-post">POST</span>/auth/register</a>
+  <a class="nav-link" href="#auth-otp-send"><span class="nm nm-post">POST</span>/auth/otp/send</a>
+  <a class="nav-link" href="#auth-otp-verify"><span class="nm nm-post">POST</span>/auth/otp/verify</a>
+  <a class="nav-link" href="#auth-login"><span class="nm nm-post">POST</span>/auth/login</a>
+  <a class="nav-link" href="#auth-logout"><span class="nm nm-post">POST</span>/auth/logout</a>
+  <a class="nav-link" href="#auth-google"><span class="nm nm-post">POST</span>/auth/google</a>
+  <a class="nav-link" href="#auth-apple"><span class="nm nm-post">POST</span>/auth/apple</a>
+  <a class="nav-link" href="#auth-reset-req"><span class="nm nm-post">POST</span>/auth/password/reset-request</a>
+  <a class="nav-link" href="#auth-reset"><span class="nm nm-post">POST</span>/auth/password/reset</a>
+  <a class="nav-link" href="#auth-me"><span class="nm nm-get">GET</span>/auth/me</a>
+
+  <div class="nav-section">Onboarding</div>
+  <a class="nav-link" href="#onboard-artist"><span class="nm nm-post">POST</span>/onboarding/artist</a>
+  <a class="nav-link" href="#onboard-booker"><span class="nm nm-post">POST</span>/onboarding/booker</a>
+
+  <div class="nav-section">Artists</div>
+  <a class="nav-link" href="#artists-get"><span class="nm nm-get">GET</span>/artists/:id</a>
+  <a class="nav-link" href="#artists-put"><span class="nm nm-put">PUT</span>/artists/:id</a>
+  <a class="nav-link" href="#artists-status"><span class="nm nm-patch">PATCH</span>/artists/:id/status</a>
+
+  <div class="nav-section">Bookers</div>
+  <a class="nav-link" href="#bookers-get"><span class="nm nm-get">GET</span>/bookers/:id</a>
+  <a class="nav-link" href="#bookers-put"><span class="nm nm-put">PUT</span>/bookers/:id</a>
+
+  <div class="nav-section">Search</div>
+  <a class="nav-link" href="#search-artists"><span class="nm nm-get">GET</span>/search/artists</a>
+  <a class="nav-link" href="#search-bookers"><span class="nm nm-get">GET</span>/search/bookers</a>
+
+  <div class="nav-section">Media</div>
+  <a class="nav-link" href="#media-upload"><span class="nm nm-post">POST</span>/media/upload</a>
+  <a class="nav-link" href="#media-primary"><span class="nm nm-patch">PATCH</span>/media/:id/set-primary</a>
+  <a class="nav-link" href="#media-delete"><span class="nm nm-delete">DEL</span>/media/:id</a>
+
+  <div class="nav-section">Availability</div>
+  <a class="nav-link" href="#avail-get"><span class="nm nm-get">GET</span>/artists/:id/availability</a>
+  <a class="nav-link" href="#avail-post"><span class="nm nm-post">POST</span>/artists/:id/availability</a>
+  <a class="nav-link" href="#avail-delete"><span class="nm nm-delete">DEL</span>/artists/:id/availability/:rid</a>
+
+  <div class="nav-section">Conversations</div>
+  <a class="nav-link" href="#conv-list"><span class="nm nm-get">GET</span>/conversations</a>
+  <a class="nav-link" href="#conv-create"><span class="nm nm-post">POST</span>/conversations</a>
+  <a class="nav-link" href="#conv-messages"><span class="nm nm-get">GET</span>/conversations/:id/messages</a>
+  <a class="nav-link" href="#conv-send"><span class="nm nm-post">POST</span>/conversations/:id/messages</a>
+  <a class="nav-link" href="#conv-read"><span class="nm nm-patch">PATCH</span>/conversations/:id/read</a>
+  <a class="nav-link" href="#conv-flag"><span class="nm nm-post">POST</span>/conversations/:id/flag</a>
+
+  <div class="nav-section">Notifications</div>
+  <a class="nav-link" href="#notif-list"><span class="nm nm-get">GET</span>/notifications</a>
+  <a class="nav-link" href="#notif-read"><span class="nm nm-patch">PATCH</span>/notifications/:id/read</a>
+  <a class="nav-link" href="#notif-read-all"><span class="nm nm-patch">PATCH</span>/notifications/read-all</a>
+
+  <div class="nav-section">Account</div>
+  <a class="nav-link" href="#acct-password"><span class="nm nm-put">PUT</span>/account/password</a>
+  <a class="nav-link" href="#acct-phone"><span class="nm nm-put">PUT</span>/account/phone</a>
+  <a class="nav-link" href="#acct-delete"><span class="nm nm-delete">DEL</span>/account</a>
+
+  <div class="nav-section">Admin — Users</div>
+  <a class="nav-link" href="#admin-users"><span class="nm nm-get">GET</span>/admin/users</a>
+  <a class="nav-link" href="#admin-user-get"><span class="nm nm-get">GET</span>/admin/users/:id</a>
+  <a class="nav-link" href="#admin-user-approve"><span class="nm nm-patch">PATCH</span>/admin/users/:id/approve</a>
+  <a class="nav-link" href="#admin-user-reject"><span class="nm nm-patch">PATCH</span>/admin/users/:id/reject</a>
+  <a class="nav-link" href="#admin-user-suspend"><span class="nm nm-patch">PATCH</span>/admin/users/:id/suspend</a>
+  <a class="nav-link" href="#admin-user-reactivate"><span class="nm nm-patch">PATCH</span>/admin/users/:id/reactivate</a>
+
+  <div class="nav-section">Admin — Payments</div>
+  <a class="nav-link" href="#admin-payments"><span class="nm nm-get">GET</span>/admin/payments</a>
+  <a class="nav-link" href="#admin-payment-release"><span class="nm nm-patch">PATCH</span>/admin/payments/:id/release</a>
+
+  <div class="nav-section">Admin — Flags</div>
+  <a class="nav-link" href="#admin-flags"><span class="nm nm-get">GET</span>/admin/flags</a>
+  <a class="nav-link" href="#admin-flag-resolve"><span class="nm nm-patch">PATCH</span>/admin/flags/:id/resolve</a>
+
+  <div class="nav-section">Admin — Analytics</div>
+  <a class="nav-link" href="#admin-analytics"><span class="nm nm-get">GET</span>/admin/analytics</a>
+  <a class="nav-link" href="#admin-analytics-export"><span class="nm nm-get">GET</span>/admin/analytics/export</a>
+
+  <div class="nav-section">Admin — Audit Log</div>
+  <a class="nav-link" href="#admin-audit"><span class="nm nm-get">GET</span>/admin/audit-log</a>
+</aside>
+
+<!-- ═══════════════════════════════ MAIN ═══════════════════════════════════ -->
+<main>
+
+<div class="doc-header">
+  <h1>Fann API Reference</h1>
+  <p>Complete endpoint documentation for the Fann platform — connecting artists with bookers across Lebanon.</p>
+  <div class="meta-row">
+    <div class="meta-item"><strong>Version</strong> <code>v1</code></div>
+    <div class="meta-item"><strong>Base URL</strong> <code>https://api.fann.app/v1</code></div>
+    <div class="meta-item"><strong>Protocol</strong> <code>HTTPS only</code></div>
+    <div class="meta-item"><strong>Format</strong> <code>application/json</code></div>
+  </div>
+</div>
+
+<div class="info-box">
+  <h3>Authentication</h3>
+  <p>All protected endpoints require a Bearer token in the <code>Authorization</code> header:</p>
+  <pre style="margin-top:8px">Authorization: Bearer &lt;jwt_token&gt;</pre>
+  <p style="margin-top:8px">Tokens are issued by <code>POST /auth/otp/verify</code>, <code>POST /auth/login</code>, <code>POST /auth/google</code>, and <code>POST /auth/apple</code>. Tokens expire after <strong>7 days</strong>. Admin endpoints additionally require <code>role: "admin"</code> in the token payload.</p>
+  <ul style="margin-top:10px">
+    <li><span class="auth-badge badge-pub">public</span> — No token required</li>
+    <li><span class="auth-badge badge-auth">auth</span> — Valid JWT required</li>
+    <li><span class="auth-badge badge-admin">admin</span> — Admin JWT required</li>
+  </ul>
+</div>
+
+
+<!-- ═══════════════════════ 1. AUTH ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Auth <span class="section-count">10 endpoints</span></div>
+
+  <!-- POST /auth/register -->
+  <div class="endpoint anchor" id="auth-register">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/register</span>
+      <span class="ep-desc">Create a new artist or booker account</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>role</code></td><td class="type">enum</td><td><span class="req-badge">required</span></td><td><code>"artist"</code> or <code>"booker"</code></td></tr>
+          <tr><td><code>full_name</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>2–80 chars</td></tr>
+          <tr><td><code>email</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Valid email, unique</td></tr>
+          <tr><td><code>password</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Min 8 chars, 1 uppercase, 1 number</td></tr>
+          <tr><td><code>phone</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>E.164 format e.g. <code>+9613XXXXXX</code></td></tr>
+          <tr><td><code>agree_to_terms</code></td><td class="type">boolean</td><td><span class="req-badge">required</span></td><td>Must be <code>true</code>. Stored as <code>terms_accepted_at</code> timestamp</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span>
+  <span class="k">"user_id"</span><span class="p">:</span>  <span class="s">"usr_01J..."</span><span class="p">,</span>
+  <span class="k">"role"</span><span class="p">:</span>    <span class="s">"artist"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>  <span class="s">"pending_phone_verification"</span>
+  <span class="c">// No JWT yet — issued only after OTP verify</span>
+<span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">400</div><div class="eg-cell">Validation failed — <code>fields</code> object lists all failing fields at once</div>
+          <div class="eg-cell eg-code eg-4xx">409</div><div class="eg-cell">Email already registered</div>
+          <div class="eg-cell eg-code eg-5xx">503</div><div class="eg-cell">Account created but SMS delivery failed — prompt user to resend OTP</div>
+        </div>
+      </div>
+      <div class="note"><strong>Note:</strong> Registration does not return a token. Navigate to OTP entry immediately, passing <code>user_id</code> to <code>POST /auth/otp/verify</code>. Return all validation errors simultaneously — never one at a time.</div>
+    </div>
+  </div>
+
+  <!-- POST /auth/otp/send -->
+  <div class="endpoint anchor" id="auth-otp-send">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/otp/send</span>
+      <span class="ep-desc">Send or resend SMS OTP to a phone number</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>phone</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>E.164 format</td></tr>
+          <tr><td><code>context</code></td><td class="type">enum</td><td><span class="opt-badge">optional</span></td><td><code>"registration"</code> | <code>"login"</code> | <code>"phone_change"</code> — for logging only</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span> <span class="k">"sent"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span> <span class="k">"expires_in"</span><span class="p">:</span> <span class="n">300</span> <span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">422</div><div class="eg-cell">Invalid phone format</div>
+          <div class="eg-cell eg-code eg-4xx">429</div><div class="eg-cell">Rate limited — max 3 OTPs per phone per 10 minutes</div>
+          <div class="eg-cell eg-code eg-5xx">503</div><div class="eg-cell">SMS provider unavailable</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POST /auth/otp/verify -->
+  <div class="endpoint anchor" id="auth-otp-verify">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/otp/verify</span>
+      <span class="ep-desc">Verify OTP — issues JWT on success</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>user_id</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>From <code>POST /auth/register</code> or known from login flow</td></tr>
+          <tr><td><code>code</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>6-digit numeric code</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"token"</span><span class="p">:</span>      <span class="s">"eyJhbGci..."</span><span class="p">,</span>
+  <span class="k">"expires_at"</span><span class="p">:</span> <span class="s">"2026-05-21T12:00:00Z"</span><span class="p">,</span>
+  <span class="k">"user"</span><span class="p">: {</span>
+    <span class="k">"id"</span><span class="p">:</span>     <span class="s">"usr_01J..."</span><span class="p">,</span>
+    <span class="k">"role"</span><span class="p">:</span>   <span class="s">"artist"</span><span class="p">,</span>
+    <span class="k">"status"</span><span class="p">:</span> <span class="s">"pending_review"</span>
+  <span class="p">}</span>
+<span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">400</div><div class="eg-cell">Invalid or expired code</div>
+          <div class="eg-cell eg-code eg-4xx">429</div><div class="eg-cell">Too many failed attempts — locked for 15 minutes</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POST /auth/login -->
+  <div class="endpoint anchor" id="auth-login">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/login</span>
+      <span class="ep-desc">Email + password sign in, returns JWT</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>email</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td></td></tr>
+          <tr><td><code>password</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"token"</span><span class="p">:</span>      <span class="s">"eyJhbGci..."</span><span class="p">,</span>
+  <span class="k">"expires_at"</span><span class="p">:</span> <span class="s">"2026-05-21T12:00:00Z"</span><span class="p">,</span>
+  <span class="k">"user"</span><span class="p">: {</span>
+    <span class="k">"id"</span><span class="p">:</span>              <span class="s">"usr_01J..."</span><span class="p">,</span>
+    <span class="k">"role"</span><span class="p">:</span>            <span class="s">"artist"</span><span class="p">,</span>
+    <span class="k">"status"</span><span class="p">:</span>          <span class="s">"active"</span><span class="p">,</span>
+    <span class="k">"onboarding_done"</span><span class="p">:</span> <span class="n">true</span>
+  <span class="p">}</span>
+<span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">401</div><div class="eg-cell">Invalid credentials</div>
+          <div class="eg-cell eg-code eg-4xx">403</div><div class="eg-cell">Account suspended or rejected</div>
+          <div class="eg-cell eg-code eg-4xx">429</div><div class="eg-cell">Too many login attempts — lock for 15 min</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POST /auth/logout -->
+  <div class="endpoint anchor" id="auth-logout">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/logout</span>
+      <span class="ep-desc">Invalidate current session token</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="color:var(--slate);font-size:13px">No request body. Adds the token to a server-side denylist (or deletes it from Redis). Returns <code>204 No Content</code>.</p></div>
+    </div>
+  </div>
+
+  <!-- POST /auth/google -->
+  <div class="endpoint anchor" id="auth-google">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/google</span>
+      <span class="ep-desc">Google OAuth — sign in or register</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>id_token</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Google ID token from client-side Google Sign-In SDK</td></tr>
+          <tr><td><code>role</code></td><td class="type">enum</td><td><span class="opt-badge">optional</span></td><td>Required only on first sign-in: <code>"artist"</code> | <code>"booker"</code></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK / 201 Created</div>
+        <pre><span class="p">{</span>
+  <span class="k">"token"</span><span class="p">:</span>       <span class="s">"eyJhbGci..."</span><span class="p">,</span>
+  <span class="k">"is_new_user"</span><span class="p">:</span> <span class="n">false</span><span class="p">,</span>
+  <span class="k">"user"</span><span class="p">: {</span> <span class="k">"id"</span><span class="p">:</span> <span class="s">"usr_01J..."</span><span class="p">,</span> <span class="k">"role"</span><span class="p">:</span> <span class="s">"booker"</span><span class="p">,</span> <span class="k">"status"</span><span class="p">:</span> <span class="s">"active"</span> <span class="p">}</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- POST /auth/apple -->
+  <div class="endpoint anchor" id="auth-apple">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/apple</span>
+      <span class="ep-desc">Apple Sign-In — sign in or register</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>identity_token</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>JWT from Apple's <code>ASAuthorizationAppleIDCredential</code></td></tr>
+          <tr><td><code>authorization_code</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Short-lived code for server-side token exchange</td></tr>
+          <tr><td><code>full_name</code></td><td class="type">string</td><td><span class="opt-badge">optional</span></td><td>Only provided by Apple on the very first sign-in</td></tr>
+          <tr><td><code>role</code></td><td class="type">enum</td><td><span class="opt-badge">optional</span></td><td>Required on first sign-in only</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK / 201 Created</div>
+        <pre><span class="p">{</span> <span class="k">"token"</span><span class="p">:</span> <span class="s">"eyJhbGci..."</span><span class="p">,</span> <span class="k">"is_new_user"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span> <span class="k">"user"</span><span class="p">: {</span> <span class="s">…</span> <span class="p">}</span> <span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- POST /auth/password/reset-request -->
+  <div class="endpoint anchor" id="auth-reset-req">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/password/reset-request</span>
+      <span class="ep-desc">Send password reset link via email</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>email</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td></td></tr>
+        </table>
+      </div>
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">Always returns <code>200 OK</code> with <code>{"sent": true}</code> regardless of whether the email exists — prevents user enumeration.</p></div>
+    </div>
+  </div>
+
+  <!-- POST /auth/password/reset -->
+  <div class="endpoint anchor" id="auth-reset">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/auth/password/reset</span>
+      <span class="ep-desc">Set new password using reset token</span>
+      <span class="auth-badge badge-pub">public</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>token</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>From reset email link — expires after 1 hour</td></tr>
+          <tr><td><code>new_password</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Min 8 chars, 1 uppercase, 1 number</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">400</div><div class="eg-cell">Token expired or already used</div>
+          <div class="eg-cell eg-code eg-4xx">422</div><div class="eg-cell">Password doesn't meet requirements</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GET /auth/me -->
+  <div class="endpoint anchor" id="auth-me">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/auth/me</span>
+      <span class="ep-desc">Return the currently authenticated user's core identity</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"id"</span><span class="p">:</span>               <span class="s">"usr_01J..."</span><span class="p">,</span>
+  <span class="k">"role"</span><span class="p">:</span>             <span class="s">"artist"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>           <span class="s">"active"</span><span class="p">,</span>
+  <span class="k">"email"</span><span class="p">:</span>            <span class="s">"nour@example.com"</span><span class="p">,</span>
+  <span class="k">"phone"</span><span class="p">:</span>            <span class="s">"+9613123456"</span><span class="p">,</span>
+  <span class="k">"onboarding_done"</span><span class="p">:</span>  <span class="n">true</span><span class="p">,</span>
+  <span class="k">"thumbnail_url"</span><span class="p">:</span>    <span class="s">"https://cdn.fann.app/media/usr_01J.jpg"</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 2. ONBOARDING ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Onboarding <span class="section-count">2 endpoints</span></div>
+
+  <div class="endpoint anchor" id="onboard-artist">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/onboarding/artist</span>
+      <span class="ep-desc">Submit artist onboarding form (3-step)</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>stage_name</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Public artist name — 2–60 chars</td></tr>
+          <tr><td><code>category</code></td><td class="type">enum</td><td><span class="req-badge">required</span></td><td><code>"singer"</code> | <code>"band"</code> | <code>"dj"</code> | <code>"dancer"</code> | <code>"comedian"</code> | <code>"photographer"</code> | <code>"other"</code></td></tr>
+          <tr><td><code>bio</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Max 500 chars</td></tr>
+          <tr><td><code>location</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>City / region within Lebanon</td></tr>
+          <tr><td><code>languages</code></td><td class="type">string[]</td><td><span class="req-badge">required</span></td><td>e.g. <code>["Arabic","English","French"]</code></td></tr>
+          <tr><td><code>price_min</code></td><td class="type">integer</td><td><span class="req-badge">required</span></td><td>USD per booking</td></tr>
+          <tr><td><code>price_max</code></td><td class="type">integer</td><td><span class="req-badge">required</span></td><td>USD per booking — must be ≥ <code>price_min</code></td></tr>
+          <tr><td><code>social_links</code></td><td class="type">object</td><td><span class="opt-badge">optional</span></td><td>Keys: <code>instagram</code>, <code>youtube</code>, <code>website</code>, <code>tiktok</code></td></tr>
+          <tr><td><code>id_document_url</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>S3 URL from <code>POST /media/upload</code> with <code>type: "id_document"</code></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span>
+  <span class="k">"artist_id"</span><span class="p">:</span> <span class="s">"art_01J..."</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>    <span class="s">"pending_review"</span>
+<span class="p">}</span></pre>
+      </div>
+      <div class="note"><strong>Note:</strong> Sets account status to <code>pending_review</code>. Admin must approve before the artist can appear in search results or initiate conversations.</div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="onboard-booker">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/onboarding/booker</span>
+      <span class="ep-desc">Submit booker profile setup</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>account_type</code></td><td class="type">enum</td><td><span class="req-badge">required</span></td><td><code>"restaurant"</code> | <code>"venue"</code> | <code>"agency"</code> | <code>"individual"</code></td></tr>
+          <tr><td><code>display_name</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Public name — 2–80 chars</td></tr>
+          <tr><td><code>bio</code></td><td class="type">string</td><td><span class="opt-badge">optional</span></td><td>Max 400 chars</td></tr>
+          <tr><td><code>location</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td></td></tr>
+          <tr><td><code>event_types</code></td><td class="type">string[]</td><td><span class="opt-badge">optional</span></td><td>e.g. <code>["weddings","corporate","private"]</code></td></tr>
+          <tr><td><code>id_document_url</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>S3 URL from media upload</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span> <span class="k">"booker_id"</span><span class="p">:</span> <span class="s">"bkr_01J..."</span><span class="p">,</span> <span class="k">"status"</span><span class="p">:</span> <span class="s">"pending_review"</span> <span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 3. ARTISTS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Artists <span class="section-count">3 endpoints</span></div>
+
+  <div class="endpoint anchor" id="artists-get">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/artists/<span class="param">:id</span></span>
+      <span class="ep-desc">Fetch a full artist profile</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"id"</span><span class="p">:</span>            <span class="s">"art_01J..."</span><span class="p">,</span>
+  <span class="k">"stage_name"</span><span class="p">:</span>   <span class="s">"Ziad Rahme"</span><span class="p">,</span>
+  <span class="k">"category"</span><span class="p">:</span>     <span class="s">"singer"</span><span class="p">,</span>
+  <span class="k">"bio"</span><span class="p">:</span>           <span class="s">"Lebanese vocalist..."</span><span class="p">,</span>
+  <span class="k">"location"</span><span class="p">:</span>     <span class="s">"Beirut"</span><span class="p">,</span>
+  <span class="k">"languages"</span><span class="p">:</span>    <span class="p">[</span><span class="s">"Arabic"</span><span class="p">,</span> <span class="s">"English"</span><span class="p">],</span>
+  <span class="k">"price_min"</span><span class="p">:</span>    <span class="n">300</span><span class="p">,</span>
+  <span class="k">"price_max"</span><span class="p">:</span>    <span class="n">800</span><span class="p">,</span>
+  <span class="k">"is_available"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+  <span class="k">"thumbnail_url"</span><span class="p">:</span><span class="s">"https://cdn.fann.app/media/art_01J_thumb.jpg"</span><span class="p">,</span>
+  <span class="k">"media"</span><span class="p">: [</span>
+    <span class="p">{</span> <span class="k">"id"</span><span class="p">:</span> <span class="s">"med_01J..."</span><span class="p">,</span> <span class="k">"type"</span><span class="p">:</span> <span class="s">"image"</span><span class="p">,</span> <span class="k">"url"</span><span class="p">:</span> <span class="s">"..."</span><span class="p">,</span> <span class="k">"is_primary"</span><span class="p">:</span> <span class="n">true</span> <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"social_links"</span><span class="p">: {</span> <span class="k">"instagram"</span><span class="p">:</span> <span class="s">"@ziadrahme"</span> <span class="p">},</span>
+  <span class="k">"verified"</span><span class="p">:</span>     <span class="n">true</span><span class="p">,</span>
+  <span class="k">"rating"</span><span class="p">:</span>       <span class="n">4.8</span><span class="p">,</span>
+  <span class="k">"review_count"</span><span class="p">:</span> <span class="n">12</span>
+<span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">404</div><div class="eg-cell">Artist not found or not yet approved</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="artists-put">
+    <div class="ep-header">
+      <span class="method m-put">PUT</span>
+      <span class="ep-path">/artists/<span class="param">:id</span></span>
+      <span class="ep-desc">Update own artist profile — owner only</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <p style="font-size:13px;color:var(--slate);margin-bottom:8px">All fields optional — send only what changed. Same fields as <code>POST /onboarding/artist</code> except <code>id_document_url</code>.</p>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span> <span class="k">"updated"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span> <span class="k">"artist"</span><span class="p">: {</span> <span class="c">/* full profile object */</span> <span class="p">}</span> <span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">403</div><div class="eg-cell">Token belongs to a different user</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="artists-status">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/artists/<span class="param">:id</span>/status</span>
+      <span class="ep-desc">Toggle artist live availability (available / unavailable)</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>is_available</code></td><td class="type">boolean</td><td><span class="req-badge">required</span></td><td><code>true</code> = visible and bookable; <code>false</code> = hidden from search</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span> <span class="k">"is_available"</span><span class="p">:</span> <span class="n">false</span> <span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 4. BOOKERS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Bookers <span class="section-count">2 endpoints</span></div>
+
+  <div class="endpoint anchor" id="bookers-get">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/bookers/<span class="param">:id</span></span>
+      <span class="ep-desc">Fetch a full booker profile</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"id"</span><span class="p">:</span>            <span class="s">"bkr_01J..."</span><span class="p">,</span>
+  <span class="k">"display_name"</span><span class="p">:</span> <span class="s">"Skybar Beirut"</span><span class="p">,</span>
+  <span class="k">"account_type"</span><span class="p">:</span> <span class="s">"venue"</span><span class="p">,</span>
+  <span class="k">"bio"</span><span class="p">:</span>           <span class="s">"Rooftop venue in Minet el Hosn..."</span><span class="p">,</span>
+  <span class="k">"location"</span><span class="p">:</span>     <span class="s">"Beirut"</span><span class="p">,</span>
+  <span class="k">"event_types"</span><span class="p">:</span>  <span class="p">[</span><span class="s">"private"</span><span class="p">,</span> <span class="s">"corporate"</span><span class="p">],</span>
+  <span class="k">"thumbnail_url"</span><span class="p">:</span><span class="s">"https://cdn.fann.app/media/bkr_01J_thumb.jpg"</span><span class="p">,</span>
+  <span class="k">"media"</span><span class="p">: [</span> <span class="p">{</span> <span class="k">"id"</span><span class="p">:</span> <span class="s">"med_..."</span><span class="p">,</span> <span class="k">"type"</span><span class="p">:</span> <span class="s">"image"</span><span class="p">,</span> <span class="k">"url"</span><span class="p">:</span> <span class="s">"..."</span><span class="p">,</span> <span class="k">"is_primary"</span><span class="p">:</span> <span class="n">true</span> <span class="p">}</span> <span class="p">],</span>
+  <span class="k">"verified"</span><span class="p">:</span>     <span class="n">true</span><span class="p">,</span>
+  <span class="k">"rating"</span><span class="p">:</span>       <span class="n">4.6</span><span class="p">,</span>
+  <span class="k">"review_count"</span><span class="p">:</span> <span class="n">7</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="bookers-put">
+    <div class="ep-header">
+      <span class="method m-put">PUT</span>
+      <span class="ep-path">/bookers/<span class="param">:id</span></span>
+      <span class="ep-desc">Update own booker profile — owner only</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">All fields optional. Same fields as <code>POST /onboarding/booker</code> except <code>id_document_url</code>. Returns updated booker object.</p></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 5. SEARCH ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Search <span class="section-count">2 endpoints</span></div>
+
+  <div class="endpoint anchor" id="search-artists">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/search/artists</span>
+      <span class="ep-desc">Search and filter artists (booker-side)</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>q</code></td><td class="type">string</td><td>—</td><td>Free-text search on stage name and bio</td></tr>
+          <tr><td><code>category</code></td><td class="type">enum</td><td>—</td><td><code>singer</code> | <code>band</code> | <code>dj</code> | <code>dancer</code> | <code>comedian</code> | <code>photographer</code> | <code>other</code></td></tr>
+          <tr><td><code>location</code></td><td class="type">string</td><td>—</td><td>Filter by city/region</td></tr>
+          <tr><td><code>price_max</code></td><td class="type">integer</td><td>—</td><td>Filter: artist's <code>price_min</code> must be ≤ this value</td></tr>
+          <tr><td><code>available_only</code></td><td class="type">boolean</td><td><code>true</code></td><td>Exclude artists with <code>is_available: false</code></td></tr>
+          <tr><td><code>page</code></td><td class="type">integer</td><td><code>1</code></td><td>Page number</td></tr>
+          <tr><td><code>per_page</code></td><td class="type">integer</td><td><code>4</code></td><td>Results per page — drives dot pagination on search grid (max 20)</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"results"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>            <span class="s">"art_01J..."</span><span class="p">,</span>
+      <span class="k">"stage_name"</span><span class="p">:</span>   <span class="s">"Ziad Rahme"</span><span class="p">,</span>
+      <span class="k">"category"</span><span class="p">:</span>     <span class="s">"singer"</span><span class="p">,</span>
+      <span class="k">"location"</span><span class="p">:</span>     <span class="s">"Beirut"</span><span class="p">,</span>
+      <span class="k">"price_min"</span><span class="p">:</span>    <span class="n">300</span><span class="p">,</span>
+      <span class="k">"price_max"</span><span class="p">:</span>    <span class="n">800</span><span class="p">,</span>
+      <span class="k">"is_available"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+      <span class="k">"thumbnail_url"</span><span class="p">:</span><span class="s">"https://cdn.fann.app/media/art_01J_thumb.jpg"</span><span class="p">,</span>
+      <span class="k">"rating"</span><span class="p">:</span>       <span class="n">4.8</span><span class="p">,</span>
+      <span class="k">"verified"</span><span class="p">:</span>     <span class="n">true</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"page"</span><span class="p">:</span>         <span class="n">1</span><span class="p">,</span>
+  <span class="k">"per_page"</span><span class="p">:</span>     <span class="n">4</span><span class="p">,</span>
+  <span class="k">"total_results"</span><span class="p">:</span><span class="n">32</span><span class="p">,</span>
+  <span class="k">"total_pages"</span><span class="p">:</span>  <span class="n">8</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="search-bookers">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/search/bookers</span>
+      <span class="ep-desc">Search and filter bookers (artist-side)</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>q</code></td><td class="type">string</td><td>—</td><td>Free-text on display name and bio</td></tr>
+          <tr><td><code>account_type</code></td><td class="type">enum</td><td>—</td><td><code>restaurant</code> | <code>venue</code> | <code>agency</code> | <code>individual</code> — maps to type badge on search card</td></tr>
+          <tr><td><code>location</code></td><td class="type">string</td><td>—</td><td></td></tr>
+          <tr><td><code>page</code></td><td class="type">integer</td><td><code>1</code></td><td></td></tr>
+          <tr><td><code>per_page</code></td><td class="type">integer</td><td><code>4</code></td><td>Max 20</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"results"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>            <span class="s">"bkr_01J..."</span><span class="p">,</span>
+      <span class="k">"display_name"</span><span class="p">:</span> <span class="s">"Skybar Beirut"</span><span class="p">,</span>
+      <span class="k">"account_type"</span><span class="p">:</span> <span class="s">"venue"</span><span class="p">,</span>
+      <span class="k">"location"</span><span class="p">:</span>     <span class="s">"Beirut"</span><span class="p">,</span>
+      <span class="k">"thumbnail_url"</span><span class="p">:</span><span class="s">"https://cdn.fann.app/media/bkr_01J_thumb.jpg"</span><span class="p">,</span>
+      <span class="k">"rating"</span><span class="p">:</span>       <span class="n">4.6</span><span class="p">,</span>
+      <span class="k">"verified"</span><span class="p">:</span>     <span class="n">true</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"page"</span><span class="p">:</span>         <span class="n">1</span><span class="p">,</span>
+  <span class="k">"per_page"</span><span class="p">:</span>     <span class="n">4</span><span class="p">,</span>
+  <span class="k">"total_results"</span><span class="p">:</span><span class="n">18</span><span class="p">,</span>
+  <span class="k">"total_pages"</span><span class="p">:</span>  <span class="n">5</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 6. MEDIA ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Media <span class="section-count">3 endpoints</span></div>
+
+  <div class="endpoint anchor" id="media-upload">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/media/upload</span>
+      <span class="ep-desc">Upload image, video, or ID document to S3</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request — multipart/form-data</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>file</code></td><td class="type">binary</td><td><span class="req-badge">required</span></td><td>JPEG / PNG / MP4 / MOV. Max 50 MB for video, 10 MB for images</td></tr>
+          <tr><td><code>type</code></td><td class="type">enum</td><td><span class="req-badge">required</span></td><td><code>"image"</code> | <code>"video"</code> | <code>"id_document"</code></td></tr>
+          <tr><td><code>is_primary</code></td><td class="type">boolean</td><td><span class="opt-badge">optional</span></td><td>Set this item as the profile thumbnail. Defaults to <code>true</code> if it's the first upload; <code>false</code> otherwise. Calling this demotes any previous primary.</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span>
+  <span class="k">"media_id"</span><span class="p">:</span>   <span class="s">"med_01J..."</span><span class="p">,</span>
+  <span class="k">"url"</span><span class="p">:</span>        <span class="s">"https://cdn.fann.app/media/med_01J.jpg"</span><span class="p">,</span>
+  <span class="k">"type"</span><span class="p">:</span>       <span class="s">"image"</span><span class="p">,</span>
+  <span class="k">"is_primary"</span><span class="p">:</span> <span class="n">true</span>
+<span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">413</div><div class="eg-cell">File too large</div>
+          <div class="eg-cell eg-code eg-4xx">415</div><div class="eg-cell">Unsupported file format</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="media-primary">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/media/<span class="param">:id</span>/set-primary</span>
+      <span class="ep-desc">Promote an existing media item to thumbnail</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">No request body. Promotes the specified item to <code>is_primary: true</code> and demotes the previous primary. Returns <code>{ "updated": true }</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="media-delete">
+    <div class="ep-header">
+      <span class="method m-delete">DELETE</span>
+      <span class="ep-path">/media/<span class="param">:id</span></span>
+      <span class="ep-desc">Delete a media item from profile and S3</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">Returns <code>204 No Content</code>. If the deleted item was the primary, server automatically promotes the next oldest item.</p></div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">403</div><div class="eg-cell">Media belongs to a different user</div>
+          <div class="eg-cell eg-code eg-4xx">404</div><div class="eg-cell">Media item not found</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 7. AVAILABILITY ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Availability <span class="section-count">3 endpoints</span></div>
+
+  <div class="endpoint anchor" id="avail-get">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/artists/<span class="param">:id</span>/availability</span>
+      <span class="ep-desc">Get artist's blocked date ranges and confirmed bookings</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>from</code></td><td class="type">date</td><td>today</td><td><code>YYYY-MM-DD</code></td></tr>
+          <tr><td><code>to</code></td><td class="type">date</td><td>+3 months</td><td><code>YYYY-MM-DD</code></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"is_available"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+  <span class="k">"blocked_ranges"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>         <span class="s">"avail_01J..."</span><span class="p">,</span>
+      <span class="k">"start_date"</span><span class="p">:</span> <span class="s">"2026-06-10"</span><span class="p">,</span>
+      <span class="k">"end_date"</span><span class="p">:</span>   <span class="s">"2026-06-15"</span><span class="p">,</span>
+      <span class="k">"label"</span><span class="p">:</span>      <span class="s">"Travelling"</span><span class="p">,</span>
+      <span class="k">"is_booking"</span><span class="p">:</span> <span class="n">false</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>         <span class="s">"avail_02J..."</span><span class="p">,</span>
+      <span class="k">"start_date"</span><span class="p">:</span> <span class="s">"2026-06-20"</span><span class="p">,</span>
+      <span class="k">"end_date"</span><span class="p">:</span>   <span class="s">"2026-06-20"</span><span class="p">,</span>
+      <span class="k">"label"</span><span class="p">:</span>      <span class="s">"Skybar"</span><span class="p">,</span>
+      <span class="k">"is_booking"</span><span class="p">:</span> <span class="n">true</span>   <span class="c">// locked — cannot be deleted</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="avail-post">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/artists/<span class="param">:id</span>/availability</span>
+      <span class="ep-desc">Block a date range as unavailable</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>start_date</code></td><td class="type">date</td><td><span class="req-badge">required</span></td><td><code>YYYY-MM-DD</code></td></tr>
+          <tr><td><code>end_date</code></td><td class="type">date</td><td><span class="req-badge">required</span></td><td>Must be ≥ <code>start_date</code></td></tr>
+          <tr><td><code>label</code></td><td class="type">string</td><td><span class="opt-badge">optional</span></td><td>Private note — max 60 chars</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span> <span class="k">"id"</span><span class="p">:</span> <span class="s">"avail_03J..."</span><span class="p">,</span> <span class="k">"start_date"</span><span class="p">:</span> <span class="s">"2026-07-01"</span><span class="p">,</span> <span class="k">"end_date"</span><span class="p">:</span> <span class="s">"2026-07-05"</span> <span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="avail-delete">
+    <div class="ep-header">
+      <span class="method m-delete">DELETE</span>
+      <span class="ep-path">/artists/<span class="param">:id</span>/availability/<span class="param">:rid</span></span>
+      <span class="ep-desc">Remove a manually blocked date range</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">Returns <code>204 No Content</code>. Cannot delete ranges with <code>is_booking: true</code> — those must be cancelled through the conversation thread.</p></div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">403</div><div class="eg-cell">Range is a confirmed booking — cannot delete directly</div>
+          <div class="eg-cell eg-code eg-4xx">404</div><div class="eg-cell">Range not found</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 8. CONVERSATIONS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Conversations <span class="section-count">6 endpoints</span></div>
+
+  <div class="endpoint anchor" id="conv-list">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/conversations</span>
+      <span class="ep-desc">List all conversations for the current user (inbox)</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>status</code></td><td class="type">enum</td><td>—</td><td><code>"active"</code> | <code>"archived"</code></td></tr>
+          <tr><td><code>page</code></td><td class="type">integer</td><td><code>1</code></td><td></td></tr>
+          <tr><td><code>per_page</code></td><td class="type">integer</td><td><code>20</code></td><td></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"conversations"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>             <span class="s">"conv_01J..."</span><span class="p">,</span>
+      <span class="k">"with"</span><span class="p">: {</span>
+        <span class="k">"id"</span><span class="p">:</span>           <span class="s">"bkr_01J..."</span><span class="p">,</span>
+        <span class="k">"display_name"</span><span class="p">:</span> <span class="s">"Skybar Beirut"</span><span class="p">,</span>
+        <span class="k">"thumbnail_url"</span><span class="p">:</span><span class="s">"https://cdn.fann.app/..."</span>
+      <span class="p">},</span>
+      <span class="k">"last_message"</span><span class="p">: {</span>
+        <span class="k">"body"</span><span class="p">:</span>       <span class="s">"Sounds great, when are you free?"</span><span class="p">,</span>
+        <span class="k">"sent_at"</span><span class="p">:</span>   <span class="s">"2026-05-14T10:22:00Z"</span><span class="p">,</span>
+        <span class="k">"sender_id"</span><span class="p">:</span> <span class="s">"bkr_01J..."</span>
+      <span class="p">},</span>
+      <span class="k">"unread_count"</span><span class="p">:</span>  <span class="n">2</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span>         <span class="s">"active"</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"total_unread"</span><span class="p">:</span> <span class="n">3</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="conv-create">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/conversations</span>
+      <span class="ep-desc">Start a new conversation with an artist or booker</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>recipient_id</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Artist or booker ID</td></tr>
+          <tr><td><code>message</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Opening message — max 2000 chars</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span> <span class="k">"conversation_id"</span><span class="p">:</span> <span class="s">"conv_01J..."</span> <span class="p">}</span></pre>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">409</div><div class="eg-cell">Conversation between these two users already exists — return existing <code>conversation_id</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="conv-messages">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/conversations/<span class="param">:id</span>/messages</span>
+      <span class="ep-desc">Fetch paginated messages in a thread</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>before</code></td><td class="type">string</td><td>—</td><td>Message ID cursor — returns messages older than this</td></tr>
+          <tr><td><code>limit</code></td><td class="type">integer</td><td><code>30</code></td><td>Max 100</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"messages"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>        <span class="s">"msg_01J..."</span><span class="p">,</span>
+      <span class="k">"sender_id"</span><span class="p">:</span> <span class="s">"bkr_01J..."</span><span class="p">,</span>
+      <span class="k">"body"</span><span class="p">:</span>      <span class="s">"Hi, are you available June 20?"</span><span class="p">,</span>
+      <span class="k">"sent_at"</span><span class="p">:</span>  <span class="s">"2026-05-14T09:00:00Z"</span><span class="p">,</span>
+      <span class="k">"read_at"</span><span class="p">:</span>  <span class="s">"2026-05-14T09:05:00Z"</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"has_more"</span><span class="p">:</span> <span class="n">true</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="conv-send">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/conversations/<span class="param">:id</span>/messages</span>
+      <span class="ep-desc">Send a message in a thread</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>body</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Max 2000 chars</td></tr>
+          <tr><td><code>media_url</code></td><td class="type">string</td><td><span class="opt-badge">optional</span></td><td>CDN URL from <code>POST /media/upload</code> for image attachments</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span>
+  <span class="k">"id"</span><span class="p">:</span>       <span class="s">"msg_02J..."</span><span class="p">,</span>
+  <span class="k">"sent_at"</span><span class="p">:</span> <span class="s">"2026-05-14T10:30:00Z"</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="conv-read">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/conversations/<span class="param">:id</span>/read</span>
+      <span class="ep-desc">Mark all messages in thread as read</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">No body. Sets <code>read_at</code> on all unread messages sent by the other party. Returns <code>{ "marked_read": 3 }</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="conv-flag">
+    <div class="ep-header">
+      <span class="method m-post">POST</span>
+      <span class="ep-path">/conversations/<span class="param">:id</span>/flag</span>
+      <span class="ep-desc">Report a conversation for admin review</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>reason</code></td><td class="type">enum</td><td><span class="req-badge">required</span></td><td><code>"harassment"</code> | <code>"spam"</code> | <code>"fraud"</code> | <code>"other"</code></td></tr>
+          <tr><td><code>note</code></td><td class="type">string</td><td><span class="opt-badge">optional</span></td><td>Additional context — max 400 chars</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 201 Created</div>
+        <pre><span class="p">{</span> <span class="k">"flag_id"</span><span class="p">:</span> <span class="s">"flag_01J..."</span><span class="p">,</span> <span class="k">"status"</span><span class="p">:</span> <span class="s">"pending_review"</span> <span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 9. NOTIFICATIONS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Notifications <span class="section-count">3 endpoints</span></div>
+
+  <div class="endpoint anchor" id="notif-list">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/notifications</span>
+      <span class="ep-desc">List notifications for the current user</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>unread_only</code></td><td class="type">boolean</td><td><code>false</code></td><td></td></tr>
+          <tr><td><code>page</code></td><td class="type">integer</td><td><code>1</code></td><td></td></tr>
+          <tr><td><code>per_page</code></td><td class="type">integer</td><td><code>20</code></td><td></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"notifications"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>         <span class="s">"notif_01J..."</span><span class="p">,</span>
+      <span class="k">"type"</span><span class="p">:</span>       <span class="s">"new_message"</span><span class="p">,</span>  <span class="c">// new_message | booking_request | account_approved | account_rejected | flag_resolved</span>
+      <span class="k">"title"</span><span class="p">:</span>      <span class="s">"New message from Skybar"</span><span class="p">,</span>
+      <span class="k">"body"</span><span class="p">:</span>       <span class="s">"Hi, are you available June 20?"</span><span class="p">,</span>
+      <span class="k">"link"</span><span class="p">:</span>       <span class="s">"/conversations/conv_01J"</span><span class="p">,</span>
+      <span class="k">"read_at"</span><span class="p">:</span>    <span class="n">null</span><span class="p">,</span>
+      <span class="k">"created_at"</span><span class="p">:</span> <span class="s">"2026-05-14T09:00:00Z"</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"unread_count"</span><span class="p">:</span> <span class="n">1</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="notif-read">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/notifications/<span class="param">:id</span>/read</span>
+      <span class="ep-desc">Mark a single notification as read</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">No body. Returns <code>{ "read_at": "2026-05-14T10:00:00Z" }</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="notif-read-all">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/notifications/read-all</span>
+      <span class="ep-desc">Mark all notifications as read</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">No body. Returns <code>{ "marked_read": 5 }</code>.</p></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 10. ACCOUNT ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Account Settings <span class="section-count">3 endpoints</span></div>
+
+  <div class="endpoint anchor" id="acct-password">
+    <div class="ep-header">
+      <span class="method m-put">PUT</span>
+      <span class="ep-path">/account/password</span>
+      <span class="ep-desc">Change password</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>current_password</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td></td></tr>
+          <tr><td><code>new_password</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Min 8 chars, 1 uppercase, 1 number</td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Errors</div>
+        <div class="error-grid">
+          <div class="eg-cell eg-head">Code</div><div class="eg-cell eg-head">Meaning</div>
+          <div class="eg-cell eg-code eg-4xx">401</div><div class="eg-cell">Current password incorrect</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="acct-phone">
+    <div class="ep-header">
+      <span class="method m-put">PUT</span>
+      <span class="ep-path">/account/phone</span>
+      <span class="ep-desc">Change phone number — triggers OTP on new number</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>new_phone</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>E.164 format</td></tr>
+          <tr><td><code>otp_code</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>6-digit code sent to <code>new_phone</code> via <code>POST /auth/otp/send</code></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span> <span class="k">"phone"</span><span class="p">:</span> <span class="s">"+9613000000"</span><span class="p">,</span> <span class="k">"updated"</span><span class="p">:</span> <span class="n">true</span> <span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="acct-delete">
+    <div class="ep-header">
+      <span class="method m-delete">DELETE</span>
+      <span class="ep-path">/account</span>
+      <span class="ep-desc">Permanently delete own account</span>
+      <span class="auth-badge badge-auth">auth</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>password</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Re-authentication required</td></tr>
+        </table>
+      </div>
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">Soft-deletes the record (sets <code>deleted_at</code>) and schedules hard deletion + S3 cleanup after 30 days. Invalidates all active tokens. Returns <code>204 No Content</code>.</p></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 11. ADMIN — USERS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Admin — Users <span class="section-count">6 endpoints</span></div>
+
+  <div class="endpoint anchor" id="admin-users">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/admin/users</span>
+      <span class="ep-desc">List all users with filters</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>status</code></td><td class="type">enum</td><td>—</td><td><code>pending_review</code> | <code>active</code> | <code>suspended</code> | <code>rejected</code></td></tr>
+          <tr><td><code>role</code></td><td class="type">enum</td><td>—</td><td><code>artist</code> | <code>booker</code></td></tr>
+          <tr><td><code>q</code></td><td class="type">string</td><td>—</td><td>Search by name or email</td></tr>
+          <tr><td><code>page</code></td><td class="type">integer</td><td><code>1</code></td><td></td></tr>
+          <tr><td><code>per_page</code></td><td class="type">integer</td><td><code>25</code></td><td></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"users"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>           <span class="s">"usr_01J..."</span><span class="p">,</span>
+      <span class="k">"full_name"</span><span class="p">:</span>   <span class="s">"Nour Khalil"</span><span class="p">,</span>
+      <span class="k">"email"</span><span class="p">:</span>       <span class="s">"nour@example.com"</span><span class="p">,</span>
+      <span class="k">"role"</span><span class="p">:</span>        <span class="s">"artist"</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span>      <span class="s">"pending_review"</span><span class="p">,</span>
+      <span class="k">"registered_at"</span><span class="p">:</span><span class="s">"2026-05-14T08:00:00Z"</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"total_results"</span><span class="p">:</span> <span class="n">142</span><span class="p">,</span>
+  <span class="k">"total_pages"</span><span class="p">:</span>   <span class="n">6</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-user-get">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/admin/users/<span class="param">:id</span></span>
+      <span class="ep-desc">Full user detail including ID document and history</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"id"</span><span class="p">:</span>              <span class="s">"usr_01J..."</span><span class="p">,</span>
+  <span class="k">"full_name"</span><span class="p">:</span>      <span class="s">"Nour Khalil"</span><span class="p">,</span>
+  <span class="k">"email"</span><span class="p">:</span>          <span class="s">"nour@example.com"</span><span class="p">,</span>
+  <span class="k">"phone"</span><span class="p">:</span>          <span class="s">"+9613123456"</span><span class="p">,</span>
+  <span class="k">"role"</span><span class="p">:</span>           <span class="s">"artist"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>         <span class="s">"pending_review"</span><span class="p">,</span>
+  <span class="k">"id_document_url"</span><span class="p">:</span><span class="s">"https://cdn.fann.app/media/id_usr_01J.jpg"</span><span class="p">,</span>
+  <span class="k">"profile"</span><span class="p">: {</span> <span class="c">/* full artist or booker profile object */</span> <span class="p">},</span>
+  <span class="k">"registered_at"</span><span class="p">:</span>  <span class="s">"2026-05-14T08:00:00Z"</span><span class="p">,</span>
+  <span class="k">"audit_events"</span><span class="p">: [</span> <span class="p">{</span> <span class="k">"action"</span><span class="p">:</span> <span class="s">"registered"</span><span class="p">,</span> <span class="k">"at"</span><span class="p">:</span> <span class="s">"..."</span> <span class="p">}</span> <span class="p">]</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-user-approve">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/admin/users/<span class="param">:id</span>/approve</span>
+      <span class="ep-desc">Approve a pending user — activates account</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">No body. Sets status to <code>active</code>, makes profile visible in search, sends approval push notification. Returns <code>{ "status": "active" }</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-user-reject">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/admin/users/<span class="param">:id</span>/reject</span>
+      <span class="ep-desc">Reject a pending user with a reason</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>reason</code></td><td class="type">enum</td><td><span class="req-badge">required</span></td><td><code>"invalid_id"</code> | <code>"fake_profile"</code> | <code>"duplicate_account"</code> | <code>"other"</code></td></tr>
+          <tr><td><code>note</code></td><td class="type">string</td><td><span class="opt-badge">optional</span></td><td>Internal note for audit trail</td></tr>
+        </table>
+      </div>
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate);margin-top:6px">Sets status to <code>rejected</code>, removes profile from search, sends rejection push notification. Returns <code>{ "status": "rejected" }</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-user-suspend">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/admin/users/<span class="param">:id</span>/suspend</span>
+      <span class="ep-desc">Suspend an active user</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>reason</code></td><td class="type">string</td><td><span class="req-badge">required</span></td><td>Shown to user</td></tr>
+          <tr><td><code>duration_days</code></td><td class="type">integer</td><td><span class="opt-badge">optional</span></td><td>Omit for indefinite suspension</td></tr>
+        </table>
+      </div>
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate);margin-top:6px">Invalidates all active tokens. Hides profile. Returns <code>{ "status": "suspended", "until": "2026-06-14" }</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-user-reactivate">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/admin/users/<span class="param">:id</span>/reactivate</span>
+      <span class="ep-desc">Lift suspension and restore active status</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">No body. Restores profile visibility and sends notification. Returns <code>{ "status": "active" }</code>.</p></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 12. ADMIN — PAYMENTS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Admin — Payments <span class="section-count">2 endpoints</span></div>
+
+  <div class="endpoint anchor" id="admin-payments">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/admin/payments</span>
+      <span class="ep-desc">List all platform payments</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>status</code></td><td class="type">enum</td><td>—</td><td><code>pending</code> | <code>released</code> | <code>refunded</code></td></tr>
+          <tr><td><code>from</code></td><td class="type">date</td><td>—</td><td></td></tr>
+          <tr><td><code>to</code></td><td class="type">date</td><td>—</td><td></td></tr>
+          <tr><td><code>page</code></td><td class="type">integer</td><td><code>1</code></td><td></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"payments"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>           <span class="s">"pay_01J..."</span><span class="p">,</span>
+      <span class="k">"amount_usd"</span><span class="p">:</span>  <span class="n">500</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span>      <span class="s">"pending"</span><span class="p">,</span>
+      <span class="k">"artist_id"</span><span class="p">:</span>   <span class="s">"art_01J..."</span><span class="p">,</span>
+      <span class="k">"booker_id"</span><span class="p">:</span>   <span class="s">"bkr_01J..."</span><span class="p">,</span>
+      <span class="k">"created_at"</span><span class="p">:</span>  <span class="s">"2026-05-10T14:00:00Z"</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"totals"</span><span class="p">: {</span> <span class="k">"pending_usd"</span><span class="p">:</span> <span class="n">2400</span><span class="p">,</span> <span class="k">"released_usd"</span><span class="p">:</span> <span class="n">8750</span> <span class="p">}</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-payment-release">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/admin/payments/<span class="param">:id</span>/release</span>
+      <span class="ep-desc">Release held payment to artist</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate)">No body. Triggers payout to artist via payment provider. Returns <code>{ "status": "released", "released_at": "2026-05-14T11:00:00Z" }</code>.</p></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 13. ADMIN — FLAGS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Admin — Flags <span class="section-count">2 endpoints</span></div>
+
+  <div class="endpoint anchor" id="admin-flags">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/admin/flags</span>
+      <span class="ep-desc">List reported conversations pending review</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>status</code></td><td class="type">enum</td><td><code>pending</code></td><td><code>pending</code> | <code>resolved</code></td></tr>
+          <tr><td><code>reason</code></td><td class="type">enum</td><td>—</td><td><code>harassment</code> | <code>spam</code> | <code>fraud</code> | <code>other</code></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"flags"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>              <span class="s">"flag_01J..."</span><span class="p">,</span>
+      <span class="k">"conversation_id"</span><span class="p">:</span><span class="s">"conv_01J..."</span><span class="p">,</span>
+      <span class="k">"reported_by"</span><span class="p">:</span>    <span class="s">"usr_01J..."</span><span class="p">,</span>
+      <span class="k">"reason"</span><span class="p">:</span>         <span class="s">"harassment"</span><span class="p">,</span>
+      <span class="k">"note"</span><span class="p">:</span>           <span class="s">"Repeated inappropriate messages"</span><span class="p">,</span>
+      <span class="k">"status"</span><span class="p">:</span>         <span class="s">"pending"</span><span class="p">,</span>
+      <span class="k">"created_at"</span><span class="p">:</span>     <span class="s">"2026-05-13T16:00:00Z"</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-flag-resolve">
+    <div class="ep-header">
+      <span class="method m-patch">PATCH</span>
+      <span class="ep-path">/admin/flags/<span class="param">:id</span>/resolve</span>
+      <span class="ep-desc">Resolve a reported flag</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Request Body</div>
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+          <tr><td><code>action</code></td><td class="type">enum</td><td><span class="req-badge">required</span></td><td><code>"dismiss"</code> | <code>"warn_user"</code> | <code>"suspend_user"</code></td></tr>
+          <tr><td><code>note"</code></td><td class="type">string</td><td><span class="opt-badge">optional</span></td><td>Internal resolution note</td></tr>
+        </table>
+      </div>
+      <div class="ep-section"><p style="font-size:13px;color:var(--slate);margin-top:6px">If <code>action</code> is <code>"suspend_user"</code>, also calls the suspend logic internally. Returns <code>{ "status": "resolved" }</code>.</p></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 14. ADMIN — ANALYTICS ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Admin — Analytics <span class="section-count">2 endpoints</span></div>
+
+  <div class="endpoint anchor" id="admin-analytics">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/admin/analytics</span>
+      <span class="ep-desc">Platform-wide analytics summary</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>from</code></td><td class="type">date</td><td>30 days ago</td><td></td></tr>
+          <tr><td><code>to</code></td><td class="type">date</td><td>today</td><td></td></tr>
+          <tr><td><code>granularity</code></td><td class="type">enum</td><td><code>day</code></td><td><code>day</code> | <code>week</code> | <code>month</code></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"period"</span><span class="p">: {</span> <span class="k">"from"</span><span class="p">:</span> <span class="s">"2026-04-14"</span><span class="p">,</span> <span class="k">"to"</span><span class="p">:</span> <span class="s">"2026-05-14"</span> <span class="p">},</span>
+  <span class="k">"totals"</span><span class="p">: {</span>
+    <span class="k">"users"</span><span class="p">:</span>          <span class="n">214</span><span class="p">,</span>
+    <span class="k">"artists"</span><span class="p">:</span>        <span class="n">138</span><span class="p">,</span>
+    <span class="k">"bookers"</span><span class="p">:</span>        <span class="n">76</span><span class="p">,</span>
+    <span class="k">"pending_review"</span><span class="p">:</span> <span class="n">12</span><span class="p">,</span>
+    <span class="k">"conversations"</span><span class="p">:</span>  <span class="n">403</span><span class="p">,</span>
+    <span class="k">"revenue_usd"</span><span class="p">:</span>    <span class="n">11250</span>
+  <span class="p">},</span>
+  <span class="k">"series"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"date"</span><span class="p">:</span>           <span class="s">"2026-05-14"</span><span class="p">,</span>
+      <span class="k">"new_users"</span><span class="p">:</span>     <span class="n">8</span><span class="p">,</span>
+      <span class="k">"new_conversations"</span><span class="p">:</span><span class="n">14</span><span class="p">,</span>
+      <span class="k">"revenue_usd"</span><span class="p">:</span>   <span class="n">750</span>
+    <span class="p">}</span>
+  <span class="p">],</span>
+  <span class="k">"top_categories"</span><span class="p">: [</span>
+    <span class="p">{</span> <span class="k">"category"</span><span class="p">:</span> <span class="s">"singer"</span><span class="p">,</span> <span class="k">"count"</span><span class="p">:</span> <span class="n">54</span> <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="endpoint anchor" id="admin-analytics-export">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/admin/analytics/export</span>
+      <span class="ep-desc">Download analytics data as CSV</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>from</code></td><td class="type">date</td><td>30 days ago</td><td></td></tr>
+          <tr><td><code>to</code></td><td class="type">date</td><td>today</td><td></td></tr>
+          <tr><td><code>dataset</code></td><td class="type">enum</td><td><code>users</code></td><td><code>users</code> | <code>conversations</code> | <code>payments</code> | <code>flags</code></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response</div>
+        <p style="font-size:13px;color:var(--slate)">Returns <code>text/csv</code> with <code>Content-Disposition: attachment; filename="fann_export_YYYY-MM-DD.csv"</code>. No JSON wrapper.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════ 15. ADMIN — AUDIT LOG ═══════════════════════ -->
+<div class="section">
+  <div class="section-title">Admin — Audit Log <span class="section-count">1 endpoint</span></div>
+
+  <div class="endpoint anchor" id="admin-audit">
+    <div class="ep-header">
+      <span class="method m-get">GET</span>
+      <span class="ep-path">/admin/audit-log</span>
+      <span class="ep-desc">Immutable log of all admin actions</span>
+      <span class="auth-badge badge-admin">admin</span>
+    </div>
+    <div class="ep-body">
+      <div class="ep-section">
+        <div class="ep-section-title">Query Parameters</div>
+        <table>
+          <tr><th>Param</th><th>Type</th><th>Default</th><th>Notes</th></tr>
+          <tr><td><code>admin_id</code></td><td class="type">string</td><td>—</td><td>Filter by which admin performed the action</td></tr>
+          <tr><td><code>action</code></td><td class="type">string</td><td>—</td><td>e.g. <code>user.approve</code>, <code>user.suspend</code>, <code>payment.release</code>, <code>flag.resolve</code></td></tr>
+          <tr><td><code>from</code></td><td class="type">date</td><td>—</td><td></td></tr>
+          <tr><td><code>to</code></td><td class="type">date</td><td>—</td><td></td></tr>
+          <tr><td><code>page</code></td><td class="type">integer</td><td><code>1</code></td><td></td></tr>
+        </table>
+      </div>
+      <div class="ep-section">
+        <div class="ep-section-title">Response — 200 OK</div>
+        <pre><span class="p">{</span>
+  <span class="k">"events"</span><span class="p">: [</span>
+    <span class="p">{</span>
+      <span class="k">"id"</span><span class="p">:</span>          <span class="s">"evt_01J..."</span><span class="p">,</span>
+      <span class="k">"admin_id"</span><span class="p">:</span>    <span class="s">"usr_admin_01"</span><span class="p">,</span>
+      <span class="k">"admin_name"</span><span class="p">:</span>  <span class="s">"Rania A."</span><span class="p">,</span>
+      <span class="k">"action"</span><span class="p">:</span>      <span class="s">"user.approve"</span><span class="p">,</span>
+      <span class="k">"target_id"</span><span class="p">:</span>   <span class="s">"usr_01J..."</span><span class="p">,</span>
+      <span class="k">"target_name"</span><span class="p">:</span> <span class="s">"Nour Khalil"</span><span class="p">,</span>
+      <span class="k">"metadata"</span><span class="p">: {</span> <span class="k">"previous_status"</span><span class="p">:</span> <span class="s">"pending_review"</span> <span class="p">},</span>
+      <span class="k">"performed_at"</span><span class="p">:</span><span class="s">"2026-05-14T09:15:00Z"</span>
+    <span class="p">}</span>
+  <span class="p">]</span>
+<span class="p">}</span></pre>
+      </div>
+      <div class="note"><strong>Note:</strong> Audit log is append-only. No update or delete endpoints exist for it. All entries written by the server — never by client request.</div>
+    </div>
+  </div>
+</div>
+
+</main>
+</body>
+</html>
