@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import { SearchArtistsDto, UpdateArtistProfileDto } from './dto/artists.dto';
 
 @Injectable()
@@ -98,10 +99,11 @@ export class ArtistsService {
 
     // Total count (same filters, no pagination)
     const countQuery = query.clone().clearSelect().clearOrder().count('ap.id as total').first();
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       countQuery,
       query.limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     // Attach each artist's categories in one follow-up query (avoids N+1)
     const artistIds = rows.map((r) => r.id);

@@ -15,6 +15,7 @@ function makeUser(overrides: Partial<UserRecord> = {}): UserRecord {
     phoneVerifiedAt: null,
     createdAt: new Date(),
     deletedAt: null,
+    pendingEmail: null,
     ...overrides,
   };
 }

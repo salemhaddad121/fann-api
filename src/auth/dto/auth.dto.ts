@@ -69,14 +69,6 @@ export class VerifyOtpDto {
 }
 
 // ----------------------------------------------------------------
-// Refresh token
-// ----------------------------------------------------------------
-export class RefreshTokenDto {
-  @IsString()
-  @IsNotEmpty()
-  refreshToken: string;
-}
-
 // ----------------------------------------------------------------
 // Forgot password — request a reset link
 // ----------------------------------------------------------------
@@ -115,6 +107,20 @@ export class ChangePasswordDto {
     message: 'Password must contain at least one uppercase letter, one lowercase letter, and one number.',
   })
   newPassword: string;
+}
+
+// ----------------------------------------------------------------
+// Change email — while logged in, proving knowledge of the current
+// password. Doesn't take effect immediately — see requestEmailChange()
+// in auth.service.ts.
+// ----------------------------------------------------------------
+export class ChangeEmailDto {
+  @IsString()
+  @IsNotEmpty()
+  currentPassword: string;
+
+  @IsEmail({}, { message: 'Enter a valid email address.' })
+  newEmail: string;
 }
 
 // ----------------------------------------------------------------

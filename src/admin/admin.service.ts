@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import {
   AuditLogDto,
   CreateCategoryDto,
@@ -64,10 +65,11 @@ export class AdminService {
     }
 
     const countQuery = query.clone().clearSelect().clearOrder().count('u.id as total').first();
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       countQuery,
       query.orderBy('u.created_at', 'desc').limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -163,10 +165,11 @@ export class AdminService {
       )
       .orderBy('doc.uploaded_at', 'asc'); // oldest first — FIFO review queue
 
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       query.clone().clearSelect().clearOrder().count('doc.id as total').first(),
       query.limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -248,10 +251,11 @@ export class AdminService {
       )
       .orderBy('p.created_at', 'asc');
 
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       query.clone().clearSelect().clearOrder().count('p.id as total').first(),
       query.limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -323,10 +327,11 @@ export class AdminService {
       )
       .orderBy('f.created_at', 'asc');
 
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       query.clone().clearSelect().clearOrder().count('f.id as total').first(),
       query.limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -429,10 +434,11 @@ export class AdminService {
     if (dto.targetId) query = query.where('al.target_id', dto.targetId);
     if (dto.action)   query = query.where('al.action', dto.action);
 
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       query.clone().clearSelect().clearOrder().count('al.id as total').first(),
       query.limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -463,9 +469,9 @@ export class AdminService {
 
     return {
       users,
-      pendingIdDocuments: Number(pendingDocs.count),
-      pendingPayments:    Number(pendingPayments.count),
-      openFlags:          Number(openFlags.count),
+      pendingIdDocuments: aggregateValue(pendingDocs, 'count'),
+      pendingPayments:    aggregateValue(pendingPayments, 'count'),
+      openFlags:          aggregateValue(openFlags, 'count'),
     };
   }
 
@@ -562,10 +568,11 @@ export class AdminService {
       )
       .orderBy('r.submitted_at', 'desc');
 
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       query.clone().clearSelect().clearOrder().count('r.id as total').first(),
       query.limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -677,12 +684,13 @@ export class AdminService {
     const category = await this.db('categories').where({ id: categoryId }).first();
     if (!category) throw new NotFoundException('Category not found.');
 
-    const { count } = await this.db('artist_categories')
+    const countRow = await this.db('artist_categories')
       .where({ category_id: categoryId })
       .count('artist_profile_id as count')
       .first();
+    const count = aggregateValue(countRow, 'count');
 
-    if (Number(count) > 0) {
+    if (count > 0) {
       throw new BadRequestException(
         `Cannot delete — ${count} artist profile(s) still use this category. Reassign them first.`,
       );
@@ -781,12 +789,13 @@ export class AdminService {
     const group = await this.db('category_groups').where({ id: groupId }).first();
     if (!group) throw new NotFoundException('Category group not found.');
 
-    const { count } = await this.db('categories')
+    const countRow = await this.db('categories')
       .where({ group_id: groupId })
       .count('id as count')
       .first();
+    const count = aggregateValue(countRow, 'count');
 
-    if (Number(count) > 0) {
+    if (count > 0) {
       throw new BadRequestException(
         `Cannot delete — ${count} categor${Number(count) === 1 ? 'y' : 'ies'} still belong to this group. Reassign or delete them first.`,
       );

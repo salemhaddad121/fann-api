@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import { UserRecord } from '../users/users.types';
 import { SubmitReviewDto } from './dto/reviews.dto';
 
@@ -187,7 +188,7 @@ export class ReviewsService {
   async adminList(page = 1, limit = 30) {
     const offset = (page - 1) * limit;
 
-    const [rows, { total }] = await Promise.all([
+    const [rows, countRow] = await Promise.all([
       this.db('reviews as r')
         .join('users as reviewer', 'reviewer.id', 'r.reviewer_id')
         .join('users as reviewee', 'reviewee.id', 'r.reviewee_id')
@@ -204,10 +205,11 @@ export class ReviewsService {
         .offset(offset),
       this.db('reviews').count('id as total').first(),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
-      meta: { total: Number(total), page, limit, pages: Math.ceil(Number(total) / limit) },
+      meta: { total, page, limit, pages: Math.ceil(total / limit) },
     };
   }
 

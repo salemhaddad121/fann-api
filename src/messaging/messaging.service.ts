@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import {
   CreateConversationDto,
   GetMessagesDto,
@@ -129,7 +130,7 @@ export class MessagingService {
     const limit  = dto.limit ?? 50;
     const offset = (page - 1) * limit;
 
-    const [messages, { total }] = await Promise.all([
+    const [messages, countRow] = await Promise.all([
       this.db('messages as m')
         .join(
           this.db.raw(
@@ -166,11 +167,12 @@ export class MessagingService {
         .count('id as total')
         .first(),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: messages,
       meta: {
-        total:  Number(total),
+        total,
         page,
         limit,
         pages:  Math.ceil(Number(total) / limit),

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -134,10 +135,64 @@ export class AuthService {
     const userId = await this.redisService.getEmailVerifyToken(token);
     if (!userId) throw new BadRequestException('Verification link is invalid or has expired.');
 
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new BadRequestException('Account not found.');
+
+    if (user.pendingEmail) {
+      // Confirming an email CHANGE (see requestEmailChange below), not
+      // the original signup address — promote the pending address
+      // rather than just flipping a verified flag on the current one.
+      await this.usersService.applyPendingEmail(userId, user.pendingEmail);
+      await this.redisService.deleteEmailVerifyToken(token);
+      return { message: 'Email address updated and verified.' };
+    }
+
     await this.usersService.markEmailVerified(userId);
     await this.redisService.deleteEmailVerifyToken(token);
 
     return { message: 'Email verified successfully.' };
+  }
+
+  // Logged-in email change — proves identity via the current password
+  // (mirrors changePassword), then re-uses the existing verification-email
+  // flow to prove the user actually controls the NEW address before it
+  // takes effect. The current email keeps working for login the entire
+  // time this is pending; verifyEmail() above completes the swap once the
+  // link is clicked.
+  async requestEmailChange(
+    userId: string,
+    newEmail: string,
+    currentPassword: string,
+  ): Promise<{ message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new BadRequestException('Account not found.');
+
+    if (user.passwordHash) {
+      const match = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!match) throw new BadRequestException('Current password is incorrect.');
+    }
+    // OAuth-only accounts (no password) skip that check — same reasoning
+    // as deleteAccount: nothing to verify against, and they're already
+    // authenticated via JWT.
+
+    if (newEmail.toLowerCase() === user.email.toLowerCase()) {
+      throw new BadRequestException('That is already your current email address.');
+    }
+
+    const existing = await this.usersService.findByEmail(newEmail);
+    if (existing) {
+      throw new ConflictException('That email is already in use by another account.');
+    }
+
+    await this.usersService.setPendingEmail(userId, newEmail);
+
+    // Send the verification link to the NEW address, not the current
+    // one — the whole point is proving the user actually controls it.
+    await this.sendEmailVerification({ ...user, email: newEmail });
+
+    return {
+      message: `Verification email sent to ${newEmail}. Your email won't change until you confirm it.`,
+    };
   }
 
   // ----------------------------------------------------------------

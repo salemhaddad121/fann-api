@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import { SearchPlannersDto, UpdatePlannerProfileDto } from './dto/planners.dto';
 
 @Injectable()
@@ -65,10 +66,11 @@ export class PlannersService {
 
     // Total count (same filters, no pagination)
     const countQuery = query.clone().clearSelect().clearOrder().count('pp.id as total').first();
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       countQuery,
       query.limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -79,6 +81,27 @@ export class PlannersService {
         pages:   Math.ceil(Number(total) / limit),
       },
     };
+  }
+
+  // ----------------------------------------------------------------
+  // Distinct event types actually in use — powers the planner-side
+  // search filter chips on the frontend (previously a static hardcoded
+  // list, since event_types has no reference table). Scoped to active
+  // planners only, matching search()'s visibility rule — otherwise a
+  // chip could come from a pending/suspended profile and return zero
+  // results if selected.
+  // ----------------------------------------------------------------
+  async getEventTypes(): Promise<string[]> {
+    const rows = await this.db.raw(`
+      SELECT DISTINCT et.value AS event_type
+      FROM planner_profiles pp
+      JOIN users u ON u.id = pp.user_id
+      CROSS JOIN LATERAL jsonb_array_elements_text(pp.event_types) AS et(value)
+      WHERE u.status = 'active'
+      ORDER BY et.value ASC
+    `);
+
+    return rows.rows.map((r: { event_type: string }) => r.event_type);
   }
 
   // ----------------------------------------------------------------

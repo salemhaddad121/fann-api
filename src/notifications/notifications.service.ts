@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import { ListNotificationsDto } from './dto/notifications.dto';
 
 @Injectable()
@@ -23,10 +24,11 @@ export class NotificationsService {
       query = query.whereNull('read_at');
     }
 
-    const [{ total }, rows] = await Promise.all([
+    const [countRow, rows] = await Promise.all([
       query.clone().clearSelect().clearOrder().count('id as total').first(),
       query.orderBy('created_at', 'desc').limit(limit).offset(offset),
     ]);
+    const total = aggregateValue(countRow, 'total');
 
     return {
       data: rows,
@@ -38,13 +40,13 @@ export class NotificationsService {
   // Badge count — number of unread notifications
   // ----------------------------------------------------------------
   async getUnreadCount(userId: string) {
-    const { count } = await this.db('notifications')
+    const countRow = await this.db('notifications')
       .where({ user_id: userId })
       .whereNull('read_at')
       .count('id as count')
       .first();
 
-    return { unreadCount: Number(count) };
+    return { unreadCount: aggregateValue(countRow, 'count') };
   }
 
   // ----------------------------------------------------------------

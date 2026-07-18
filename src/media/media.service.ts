@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import {
   S3Client,
   PutObjectCommand,
@@ -42,14 +43,14 @@ export class MediaService {
     private readonly configService: ConfigService,
   ) {
     this.s3 = new S3Client({
-      region:      configService.get<string>('AWS_REGION'),
+      region:      configService.getOrThrow<string>('AWS_REGION'),
       credentials: {
-        accessKeyId:     configService.get<string>('AWS_ACCESS_KEY_ID'),
-        secretAccessKey: configService.get<string>('AWS_SECRET_ACCESS_KEY'),
+        accessKeyId:     configService.getOrThrow<string>('AWS_ACCESS_KEY_ID'),
+        secretAccessKey: configService.getOrThrow<string>('AWS_SECRET_ACCESS_KEY'),
       },
     });
-    this.bucket  = configService.get<string>('S3_BUCKET');
-    this.cdnBase = configService.get<string>('CDN_BASE_URL');
+    this.bucket  = configService.getOrThrow<string>('S3_BUCKET');
+    this.cdnBase = configService.getOrThrow<string>('CDN_BASE_URL');
   }
 
   // ----------------------------------------------------------------
@@ -58,8 +59,13 @@ export class MediaService {
   // ----------------------------------------------------------------
   async presign(userId: string, dto: PresignMediaDto) {
     this.validateFileSizeCap(dto.mediaType, dto.fileSizeBytes);
-    if (dto.mediaType === 'video' && dto.durationSec > MAX_VIDEO_SECONDS) {
-      throw new BadRequestException(`Videos must be ${MAX_VIDEO_SECONDS} seconds or shorter.`);
+    if (dto.mediaType === 'video') {
+      if (dto.durationSec == null) {
+        throw new BadRequestException('Video duration is required.');
+      }
+      if (dto.durationSec > MAX_VIDEO_SECONDS) {
+        throw new BadRequestException(`Videos must be ${MAX_VIDEO_SECONDS} seconds or shorter.`);
+      }
     }
 
     const ext         = path.extname(dto.filename).toLowerCase();
@@ -89,28 +95,29 @@ export class MediaService {
     this.validateFileSizeCap(dto.mediaType, dto.fileSizeBytes);
 
     // Check user doesn't already have too many items (soft cap: 20)
-    const { count } = await this.db('media')
+    const countRow = await this.db('media')
       .where({ user_id: userId })
       .count('id as count')
       .first();
+    const count = aggregateValue(countRow, 'count');
 
-    if (Number(count) >= 20) {
+    if (count >= 20) {
       throw new BadRequestException('Maximum of 20 media items per profile.');
     }
 
     const cdnUrl = `${this.cdnBase}/${dto.s3Key}`;
 
     // Determine sort_order — append to end
-    const { maxSort } = await this.db('media')
+    const maxSortRow = await this.db('media')
       .where({ user_id: userId })
       .max('sort_order as maxSort')
       .first();
+    const maxSort = maxSortRow?.maxSort ?? null;
 
     const sortOrder = maxSort !== null ? Number(maxSort) + 1 : 0;
 
     // First photo becomes primary automatically
-    const existingCount = Number(count);
-    const isPrimary = existingCount === 0 && dto.mediaType === 'photo';
+    const isPrimary = count === 0 && dto.mediaType === 'photo';
 
     const [row] = await this.db('media')
       .insert({

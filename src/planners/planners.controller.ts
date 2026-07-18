@@ -43,6 +43,14 @@ export class PlannersController {
     return this.plannersService.updateMe(userId, dto);
   }
 
+  // GET /planners/event-types — public. Registered before the :id route
+  // below, or Express would match "event-types" as the :id param instead
+  // (same reason /planners/me is registered before /planners/:id).
+  @Get('event-types')
+  getEventTypes() {
+    return this.plannersService.getEventTypes();
+  }
+
   // GET /planners/:id
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {

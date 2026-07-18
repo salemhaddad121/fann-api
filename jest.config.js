@@ -5,13 +5,13 @@ module.exports = {
   testRegex: '.*\\.spec\\.ts$',
   setupFiles: ['<rootDir>/jest.setup.ts'],
   transform: {
-    // isolatedModules: true skips type-checking during test runs, matching
-    // how `nest start --watch` already behaves — there are 25 pre-existing
-    // strict-null-check errors elsewhere in the codebase (knex's .first()
-    // returning T | undefined) that don't affect runtime behavior but do
-    // fail a full type-check. Fixing those is a separate, tracked task;
-    // tests shouldn't be blocked on it in the meantime.
-    '^.+\\.(t|j)s$': ['ts-jest', { tsconfig: 'tsconfig.spec.json' }],
+    // Previously used tsconfig.spec.json with isolatedModules: true to skip
+    // type-checking during test runs, working around 25 pre-existing
+    // strict-null-check errors elsewhere in the codebase. Those are fixed
+    // now, so tests type-check against the real tsconfig.json — one less
+    // moving part, and a regression that reintroduces a type error will
+    // now fail `npm test` too, not just `npm run build`.
+    '^.+\\.(t|j)s$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
   },
   collectCoverageFrom: ['src/**/*.(t|j)s'],
   coverageDirectory: 'coverage',

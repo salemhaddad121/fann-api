@@ -13,4 +13,8 @@ export interface UserRecord {
   phoneVerifiedAt: Date | null;
   createdAt: Date;
   deletedAt: Date | null;
+  // Set while an email change is awaiting confirmation (see
+  // requestEmailChange/verifyEmail in auth.service.ts). The active
+  // `email` above keeps working for login until this is confirmed.
+  pendingEmail: string | null;
 }

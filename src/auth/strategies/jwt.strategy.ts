@@ -2,8 +2,19 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Request } from 'express';
 import { UsersService } from '../../users/users.service';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
+import { ACCESS_TOKEN_COOKIE } from '../auth-cookie.util';
+
+// Reads the access token from the httpOnly cookie set by /auth/login,
+// /auth/refresh, and the OAuth callbacks. Falls back to a Bearer header
+// so a future non-browser client (e.g. the React Native app mentioned in
+// the project's longer-term plans) can still authenticate without cookies,
+// which don't work the same way outside a browser.
+const cookieExtractor = (req: Request): string | null => {
+  return req?.cookies?.[ACCESS_TOKEN_COOKIE] ?? null;
+};
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -12,7 +23,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly usersService: UsersService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        cookieExtractor,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET'),
     });

@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { aggregateValue } from '../common/db.util';
 import { UserRecord, UserRole, UserStatus } from './users.types';
 
 @Injectable()
@@ -118,6 +119,41 @@ export class UsersService {
     await this.db('users').where({ id: userId }).update({ password_hash: passwordHash });
   }
 
+  // Records the requested new address without touching the active email —
+  // login and everything else keeps using the current email until the
+  // change is confirmed via the verification link (applyPendingEmail below).
+  async setPendingEmail(userId: string, newEmail: string): Promise<void> {
+    await this.db('users').where({ id: userId }).update({ pending_email: newEmail });
+  }
+
+  // Called once the verification link for an email change is confirmed —
+  // promotes pending_email to the real email and marks it verified in one
+  // step, atomically (a partially-applied state, e.g. email swapped but
+  // still shown unverified, would be confusing and wrong).
+  //
+  // newEmail is passed in explicitly (read fresh from the DB by the
+  // caller) rather than re-read here, so this only ever writes the value
+  // the caller already confirmed is still the pending one.
+  async applyPendingEmail(userId: string, newEmail: string): Promise<void> {
+    try {
+      await this.db('users')
+        .where({ id: userId })
+        .update({
+          email: newEmail,
+          pending_email: null,
+          email_verified_at: this.db.fn.now(),
+        });
+    } catch (err: any) {
+      // Postgres unique_violation — someone else claimed this exact email
+      // (as their active address) in the window between the request and
+      // this confirmation.
+      if (err?.code === '23505') {
+        throw new ConflictException('That email is already in use by another account.');
+      }
+      throw err;
+    }
+  }
+
   // Soft delete — see migration 007's comment for why this reuses
   // 'banned' rather than removing the row or adding a new status value.
   // Email is anonymized so the address can be reused for a new signup,
@@ -149,12 +185,12 @@ export class UsersService {
     const prefix = role === 'artist' ? 'ART' : role === 'planner' ? 'PLN' : 'ADM';
 
     // Count existing accounts of this role and pad to 6 digits
-    const { count } = await this.db('users')
+    const countRow = await this.db('users')
       .where({ role })
       .count('id as count')
       .first();
 
-    const seq = String(Number(count) + 1).padStart(6, '0');
+    const seq = String(aggregateValue(countRow, 'count') + 1).padStart(6, '0');
     return `${prefix}-${seq}`;
   }
 
@@ -171,6 +207,7 @@ export class UsersService {
       phoneVerifiedAt: row.phone_verified_at,
       createdAt:       row.created_at,
       deletedAt:       row.deleted_at,
+      pendingEmail:    row.pending_email,
     };
   }
 }

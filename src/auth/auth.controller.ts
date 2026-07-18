@@ -10,17 +10,18 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import {
+  ChangeEmailDto,
   ChangePasswordDto,
   DeleteAccountDto,
   ForgotPasswordDto,
   LoginDto,
-  RefreshTokenDto,
   RegisterDto,
   ResetPasswordDto,
   SendOtpDto,
@@ -29,6 +30,12 @@ import {
 import { JwtAuthGuard, LocalAuthGuard } from './guards/auth.guards';
 import { CurrentUser } from './decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
+import {
+  setAuthCookies,
+  setAccessTokenCookie,
+  clearAuthCookies,
+  REFRESH_TOKEN_COOKIE,
+} from './auth-cookie.util';
 
 @Controller('auth')
 export class AuthController {
@@ -49,8 +56,13 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @UseGuards(LocalAuthGuard)
-  async login(@CurrentUser() user: UserRecord) {
-    return this.authService.login(user);
+  async login(
+    @CurrentUser() user: UserRecord,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { accessToken, refreshToken, user: safeUser } = await this.authService.login(user);
+    setAuthCookies(res, { accessToken, refreshToken });
+    return { user: safeUser };
   }
 
   // ----------------------------------------------------------------
@@ -58,8 +70,18 @@ export class AuthController {
   // ----------------------------------------------------------------
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken);
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const refreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE];
+    if (!refreshToken) {
+      throw new UnauthorizedException('No refresh token provided.');
+    }
+
+    const { accessToken } = await this.authService.refresh(refreshToken);
+    setAccessTokenCookie(res, accessToken);
+    return { message: 'Access token refreshed.' };
   }
 
   // ----------------------------------------------------------------
@@ -68,8 +90,13 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  async logout(@CurrentUser('id') userId: string) {
-    return this.authService.logout(userId);
+  async logout(
+    @CurrentUser('id') userId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.logout(userId);
+    clearAuthCookies(res);
+    return result;
   }
 
   // ----------------------------------------------------------------
@@ -113,6 +140,20 @@ export class AuthController {
   }
 
   // ----------------------------------------------------------------
+  // PATCH /auth/email — request an email change while logged in.
+  // Doesn't take effect until the verification link sent to the new
+  // address is clicked — see requestEmailChange() in auth.service.ts.
+  // ----------------------------------------------------------------
+  @Patch('email')
+  @UseGuards(JwtAuthGuard)
+  async changeEmail(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChangeEmailDto,
+  ) {
+    return this.authService.requestEmailChange(userId, dto.newEmail, dto.currentPassword);
+  }
+
+  // ----------------------------------------------------------------
   // DELETE /auth/me — soft-delete your own account
   // ----------------------------------------------------------------
   @Delete('me')
@@ -120,8 +161,11 @@ export class AuthController {
   async deleteAccount(
     @CurrentUser('id') userId: string,
     @Body() dto: DeleteAccountDto,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.authService.deleteAccount(userId, dto.password);
+    const result = await this.authService.deleteAccount(userId, dto.password);
+    clearAuthCookies(res);
+    return result;
   }
 
   // ----------------------------------------------------------------
@@ -167,13 +211,10 @@ export class AuthController {
     const user = req.user as UserRecord;
     const tokens = await this.authService.loginOAuthUser(user);
 
-    // Redirect to frontend with tokens in query params.
-    // In production, prefer a short-lived server-side session or
-    // POST-to-close-popup pattern instead.
+    setAuthCookies(res, tokens);
+
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
-    return res.redirect(
-      `${frontendUrl}/auth/callback?accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`,
-    );
+    return res.redirect(`${frontendUrl}/auth/callback`);
   }
 
   // ----------------------------------------------------------------
@@ -190,10 +231,10 @@ export class AuthController {
     const user = req.user as UserRecord;
     const tokens = await this.authService.loginOAuthUser(user);
 
+    setAuthCookies(res, tokens);
+
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
-    return res.redirect(
-      `${frontendUrl}/auth/callback?accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`,
-    );
+    return res.redirect(`${frontendUrl}/auth/callback`);
   }
 
   // ----------------------------------------------------------------
