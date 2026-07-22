@@ -6,6 +6,7 @@ import { Request } from 'express';
 import { UsersService } from '../../users/users.service';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
 import { ACCESS_TOKEN_COOKIE } from '../auth-cookie.util';
+import { requireConfig } from '../../common/config.util';
 
 // Reads the access token from the httpOnly cookie set by /auth/login,
 // /auth/refresh, and the OAuth callbacks. Falls back to a Bearer header
@@ -28,7 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromAuthHeaderAsBearerToken(),
       ]),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET'),
+      secretOrKey: requireConfig(configService, 'JWT_SECRET'),
     });
   }
 

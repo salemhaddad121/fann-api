@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-apple';
 import { AuthService } from '../auth.service';
 import { UserRole } from '../../users/users.types';
+import { requireConfig } from '../../common/config.util';
 
 @Injectable()
 export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
@@ -12,11 +13,11 @@ export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
     private readonly authService: AuthService,
   ) {
     super({
-      clientID:    configService.get<string>('APPLE_CLIENT_ID'),    // Service ID
-      teamID:      configService.get<string>('APPLE_TEAM_ID'),
-      keyID:       configService.get<string>('APPLE_KEY_ID'),
-      privateKeyString: configService.get<string>('APPLE_PRIVATE_KEY'),
-      callbackURL: configService.get<string>('APPLE_CALLBACK_URL'),
+      clientID:    requireConfig(configService, 'APPLE_CLIENT_ID'),    // Service ID
+      teamID:      requireConfig(configService, 'APPLE_TEAM_ID'),
+      keyID:       requireConfig(configService, 'APPLE_KEY_ID'),
+      privateKeyString: requireConfig(configService, 'APPLE_PRIVATE_KEY'),
+      callbackURL: requireConfig(configService, 'APPLE_CALLBACK_URL'),
       passReqToCallback: true,
       scope: ['email', 'name'],
     });

@@ -17,6 +17,10 @@ import { AuthGuard } from '@nestjs/passport';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import {
+  AppleConfiguredGuard,
+  GoogleConfiguredGuard,
+} from './guards/oauth-configured.guard';
+import {
   ChangeEmailDto,
   ChangePasswordDto,
   DeleteAccountDto,
@@ -200,13 +204,13 @@ export class AuthController {
   // signed up as so the callback knows which profile to create.
   // ----------------------------------------------------------------
   @Get('google')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleConfiguredGuard, AuthGuard('google'))
   googleLogin() {
     // Passport redirects automatically — no body needed.
   }
 
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleConfiguredGuard, AuthGuard('google'))
   async googleCallback(@Req() req: Request, @Res() res: Response) {
     const user = req.user as UserRecord;
     const tokens = await this.authService.loginOAuthUser(user);
@@ -222,11 +226,11 @@ export class AuthController {
   // Apple uses a POST callback (form_post response mode)
   // ----------------------------------------------------------------
   @Get('apple')
-  @UseGuards(AuthGuard('apple'))
+  @UseGuards(AppleConfiguredGuard, AuthGuard('apple'))
   appleLogin() {}
 
   @Post('apple/callback')
-  @UseGuards(AuthGuard('apple'))
+  @UseGuards(AppleConfiguredGuard, AuthGuard('apple'))
   async appleCallback(@Req() req: Request, @Res() res: Response) {
     const user = req.user as UserRecord;
     const tokens = await this.authService.loginOAuthUser(user);

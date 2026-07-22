@@ -4,6 +4,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback } from 'passport-google-oauth20';
 import { AuthService } from '../auth.service';
 import { UserRole } from '../../users/users.types';
+import { requireConfig } from '../../common/config.util';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
@@ -12,9 +13,9 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     private readonly authService: AuthService,
   ) {
     super({
-      clientID:     configService.get<string>('GOOGLE_CLIENT_ID'),
-      clientSecret: configService.get<string>('GOOGLE_CLIENT_SECRET'),
-      callbackURL:  configService.get<string>('GOOGLE_CALLBACK_URL'),
+      clientID:     requireConfig(configService, 'GOOGLE_CLIENT_ID'),
+      clientSecret: requireConfig(configService, 'GOOGLE_CLIENT_SECRET'),
+      callbackURL:  requireConfig(configService, 'GOOGLE_CALLBACK_URL'),
       // Pass `state` through so we know which role the user registered as
       passReqToCallback: true,
       scope: ['email', 'profile'],

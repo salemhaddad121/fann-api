@@ -25,7 +25,7 @@ TypeScript errors, httpOnly cookie migration, and three smaller features.
 - Multi-select grouped categories (up to 4 per artist, 6 groups, 36 categories)
 - Account deletion — soft delete (`DELETE /auth/me`), reuses the `banned` status plus a
   `deleted_at` column, email anonymized on delete
-- Seed data (`migrations/002_fann_seed_data.sql`) — 11 users (1 admin, 6 artists, 4 planners)
+- Seed data (`migrations/009_fann_seed_data.sql`) — 11 users (1 admin, 6 artists, 4 planners)
   across every status, media, ID documents, availability blocks, conversations/messages, 4
   bookings across every state, reviews, notifications, payments, a flag, and audit log. Password
   for every seeded user: `Fann@dev2025`.
@@ -34,11 +34,13 @@ TypeScript errors, httpOnly cookie migration, and three smaller features.
 **Known gaps:**
 1. WhatsApp OTP requires a Meta-approved "authentication" template before it will actually send —
    see `.env.example` for setup notes.
-2. **S3 bucket CORS is not something this repo can fix** — it needs to be set directly in the AWS
+2. Google/Apple sign-in are inert until their credentials are set — the app boots and everything
+   else works, but those routes answer 503. See "OAuth providers are optional" below.
+3. **S3 bucket CORS is not something this repo can fix** — it needs to be set directly in the AWS
    console. The exact policy JSON is written up in `docs/s3-cors-setup.md`. Until it's applied,
    media uploads will fail from the browser with a CORS error (the frontend now detects this
    specific failure mode and points at that doc instead of showing a generic error).
-3. The httpOnly cookie `SameSite=Lax` choice (see below) assumes the frontend and backend end up
+4. The httpOnly cookie `SameSite=Lax` choice (see below) assumes the frontend and backend end up
    on the same parent domain in production. If they're ever deployed to fully unrelated domains
    instead, this needs revisiting — `SameSite=None` would be required for cross-site cookies to
    be sent at all, and that requires adding a real CSRF token on top, since `None` doesn't carry
@@ -46,13 +48,113 @@ TypeScript errors, httpOnly cookie migration, and three smaller features.
 
 ## Folder structure
 - `src/` — NestJS backend, one folder per module (controller, service, module, dto/); `common/`
-  holds small shared helpers used across modules (currently just `db.util.ts`)
-- `migrations/` — SQL schema files, run in numeric order
+  holds small shared helpers used across modules (`db.util.ts`, `config.util.ts`)
+- `migrations/` — SQL schema files, run in numeric order via `npm run migrate`
+- `scripts/` — `migrate.sh`, the migration runner behind `npm run migrate`
 - `docs/` — setup docs that live outside the app code (currently just `s3-cors-setup.md`)
 - `design/` — HTML screen mockups, API spec, ERD, project doc
 - `assets/images/` — reference images used in mockups
 
-## This session: TypeScript errors, httpOnly cookies, and three smaller features
+## Running it locally
+
+```bash
+npm install
+cp .env.example .env      # fill in JWT_SECRET / JWT_REFRESH_SECRET at minimum
+createdb fann             # or: psql -c 'CREATE DATABASE fann;'
+npm run migrate           # applies migrations/*.sql in numeric order
+npm run start:dev
+```
+
+`npm run migrate` runs each file in `migrations/` in numeric order, one transaction per file,
+stopping at the first error. It reads `DB_*` from `.env` (real environment variables win) and
+needs `psql` on PATH.
+
+**Only `JWT_SECRET` and `JWT_REFRESH_SECRET` are genuinely required to boot.** Google/Apple
+sign-in, WhatsApp OTP, Resend email, and S3 all degrade rather than block startup — see
+"OAuth providers are optional" below. Anything else that's genuinely required fails at boot
+naming the missing variable (`src/common/config.util.ts`'s `requireConfig`), rather than
+surfacing as a confusing error later.
+
+
+## Audit pass: migration order, OAuth boot crash, dependency CVEs
+
+_(This section documents an external audit pass; the session notes below it predate it.)_
+
+Three things an external audit found by actually building and booting both repos against a real
+Postgres + Redis, rather than reading the code. All three were reproducible from a clean clone.
+
+### Seed migration renumbered 002 → 009
+
+**`migrations/` could not be applied in the order this README told you to apply them.**
+`002_fann_seed_data.sql` inserts into `artist_categories`, which is only created by
+`005_fann_category_groups_multiselect.sql` — so a numeric-order run on a fresh database died with
+`relation "artist_categories" does not exist`. The file's own header comment had said "Run after
+001, 003, 004, 005", which is to say the ordering bug was known and documented in the one place
+nobody looks until it breaks.
+
+Fixed by renaming it to `009_fann_seed_data.sql`, so numeric order *is* dependency order and seed
+data lands last where it belongs. **There is deliberately no `002` any more** — renumbering the
+already-applied schema files `003`–`008` would break every database that has run them, and a gap
+in the sequence is harmless. Verified by dropping the database and re-running: all 8 files apply
+clean, and the seeded row counts are identical to before (11 users, 36 categories, 9
+artist_categories, 4 bookings, 3 reviews, 7 messages).
+
+`npm run migrate` now enforces the order mechanically, which is the actual fix — the ordering was
+only ever guaranteed by a README sentence, which is why it drifted.
+
+### OAuth providers are optional
+
+**The backend could not boot from a clean `.env.example`.** `passport-google-oauth20` and
+`passport-apple` both throw synchronously from their constructors when handed an empty
+`clientID`, and Nest instantiates every provider at bootstrap — so the process died before
+binding a port, with `OAuth2Strategy requires a clientID option`. `.env.example` ships those
+values blank, so the documented setup path was a crash. It's the same failure shape as the
+missing `@aws-sdk` dependency from the earlier session: fine in every code review, fatal the
+moment anything actually runs.
+
+A Passport strategy registers itself with Passport *from its constructor*, so "don't register
+this provider" and "don't construct it" are the same operation. `auth.module.ts` now builds each
+strategy through a factory that returns `null` when that provider's credentials are absent,
+logging a warning naming the missing variables. `src/auth/oauth-config.util.ts` holds the
+required-key lists so the module and the routes can't drift apart.
+
+The routes then need to say something sensible, since an unregistered strategy makes
+`AuthGuard('google')` fail with an opaque `Unknown authentication strategy` 500.
+`GoogleConfiguredGuard`/`AppleConfiguredGuard` run first and return a **503 naming the missing
+variables** instead.
+
+Providers are independent: configuring Google alone leaves Apple cleanly disabled. Verified both
+directions — blank credentials boot and 503; real credentials produce a correct 302 to
+`accounts.google.com`.
+
+### Dependency CVEs, and one upgrade that needed doing by hand
+
+Production dependencies went from **15 known vulnerabilities (6 high, 9 moderate) to 0**.
+
+Worth recording *how*, because `npm audit fix --force` on its own left the tree in a state that
+type-checked and built but was not actually supported: it bumped `@nestjs/core` and
+`@nestjs/platform-express` to 11 while leaving `@nestjs/common` on 10. Nest requires those to
+share a major. The rest of the family (`common`, `jwt`, `passport`, `cli`, `testing`) was aligned
+to 11 by hand afterwards.
+
+The upgrade then surfaced two latent bugs through stricter Passport typings, both the same shape:
+`JWT_SECRET` and the Google client credentials were being passed as `string | undefined`. A
+missing `JWT_SECRET` would have failed somewhere downstream and unhelpfully. `requireConfig()` in
+`src/common/config.util.ts` now throws at boot naming the variable.
+
+Re-verified after the upgrade, not just assumed: 0 type errors, clean build, **53/53 tests**, and
+the full cookie cycle driven with curl again (login → authenticated request → refresh → logout →
+correctly-rejected request), because Express 5 is where cookie handling would plausibly have
+regressed. `HttpOnly`/`SameSite=Lax` intact, no tokens in any response body, role gating and DTO
+validation unchanged.
+
+**One CVE was deliberately left open.** The frontend reports 2 moderate advisories against
+`postcss 8.4.31`, which is vendored *inside* Next.js. `npm audit fix --force` "fixes" this by
+downgrading Next from 16.2.10 to **9.3.3** — seven majors back, and far more dangerous than the
+advisory. 16.2.10 is the current release, so there's no clean path today. **Don't run `--force`
+in the frontend repo**; re-check when Next ships a patched postcss.
+
+## Earlier session: TypeScript errors, httpOnly cookies, and three smaller features
 
 ### 25 pre-existing TypeScript errors — fixed, and one of them wasn't just a type nuisance
 
@@ -196,6 +298,14 @@ Postgres + Redis for exactly that reason, but it wasn't wired into the automated
 What's actually open right now, as far as this pass could tell:
 - Applying the S3 CORS policy in the real AWS console (`docs/s3-cors-setup.md` has the exact
   JSON) — an account-access step, not fixable from either repo.
+- The 2 open `postcss` advisories in the frontend, which can only be closed by Next.js shipping
+  a patched copy — see the audit section above, and do not "fix" them with `--force`.
+- Test coverage is 15% of statements / 12.5% of functions; controllers and the artists,
+  availability, media, notifications, saved and scheduler services are at 0%. The 53 tests cover
+  the business logic most worth protecting, but a passing suite currently proves less than it
+  looks like it does.
+- Rate limiting. There's nothing throttling `/auth/login`, `/auth/send-otp`, or
+  `/auth/forgot-password` — all three are worth `@nestjs/throttler` before this is public.
 - Revisiting the cookie `SameSite` choice if the frontend and backend ever end up on genuinely
   unrelated domains instead of a shared parent domain.
 - Integration/e2e test coverage against a real database, if that's worth the infrastructure.
