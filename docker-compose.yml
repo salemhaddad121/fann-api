@@ -1,0 +1,123 @@
+# One-command local stack: Postgres + Redis + API + web frontend.
+#
+#   docker compose up -d --build
+#
+# Expects the frontend repo cloned as a SIBLING of this one:
+#   <parent>/fann-api        (this repo)
+#   <parent>/Fann---Web      (frontend)
+#
+# API:  http://localhost:4000/api/v1
+# Web:  http://localhost:3000
+#
+# Migrations (including seed data — every seeded user's password is
+# Fann@dev2025) are applied automatically by the one-shot `migrate`
+# service before the API starts. The JWT secrets below are throwaway
+# dev defaults; override via environment or a .env file next to this
+# compose file for anything beyond local development.
+
+services:
+  db:
+    image: public.ecr.aws/docker/library/postgres:18-alpine
+    environment:
+      POSTGRES_DB: fann
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: fann_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      # postgres:18+ images want the mount one level up from .../data
+      - fann_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fann"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: public.ecr.aws/docker/library/redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # One-shot: applies migrations/*.sql in numeric order via the repo's own
+  # migrate.sh (it prefers real env vars over .env, so DB_HOST=db just works).
+  # There is no applied-migrations tracking table and the files are not
+  # idempotent, so this only runs against an EMPTY database (detected via the
+  # users table) and is skipped otherwise. After pulling new migration files,
+  # reset with: docker compose down -v && docker compose up -d
+  migrate:
+    image: public.ecr.aws/docker/library/postgres:18-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: fann
+      DB_USER: postgres
+      DB_PASSWORD: fann_dev
+    volumes:
+      - ./migrations:/repo/migrations:ro
+      - ./scripts:/repo/scripts:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        export PGPASSWORD="$$DB_PASSWORD"
+        if psql -h "$$DB_HOST" -U "$$DB_USER" -d "$$DB_NAME" -tAc "SELECT to_regclass('public.users')" | grep -q users; then
+          echo "Schema already present — skipping migrations (docker compose down -v to reset)."
+        else
+          bash /repo/scripts/migrate.sh
+        fi
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: 4000
+      APP_URL: http://localhost:4000
+      FRONTEND_URL: http://localhost:3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: fann
+      DB_USER: postgres
+      DB_PASSWORD: fann_dev
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-do-not-use-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-only-refresh-secret-do-not-use-in-production}
+      # MediaService getOrThrow()s these at boot (README overstates how
+      # optional S3 is). Placeholders keep the app up; media upload calls
+      # will fail until real AWS credentials replace them.
+      AWS_REGION: ${AWS_REGION:-eu-west-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-placeholder}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-placeholder}
+      S3_BUCKET: ${S3_BUCKET:-fann-media}
+      CDN_BASE_URL: ${CDN_BASE_URL:-https://cdn.fann.app}
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: ../Fann---Web
+      # Baked into the client bundle at build time; must be the URL the
+      # BROWSER can reach, hence localhost, not the Docker service name.
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  fann_pgdata:

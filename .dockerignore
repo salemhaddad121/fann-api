@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.git
+postgresql_18.exe
+design
+assets
+docs
+*.md
