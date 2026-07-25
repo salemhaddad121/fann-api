@@ -2,6 +2,7 @@ import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_PIPE } from '@nestjs/core';
 import { KnexModule } from 'nest-knexjs';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule }         from './auth/auth.module';
 import { RedisModule }        from './redis/redis.module';
 import { EmailModule }        from './email/email.module';
@@ -39,6 +40,11 @@ import { SavedModule }        from './saved/saved.module';
         },
       }),
     }),
+
+    // Rate limiting — registered globally so ThrottlerGuard resolves anywhere,
+    // but only ENFORCED on the auth routes that opt in via
+    // @UseGuards(ThrottlerGuard). Default bucket: 10 requests / 60s per IP.
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }]),
 
     RedisModule,
     EmailModule,
