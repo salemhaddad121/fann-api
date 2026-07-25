@@ -42,12 +42,22 @@ export class MediaService {
     @InjectConnection() private readonly db: Knex,
     private readonly configService: ConfigService,
   ) {
+    // Optional custom endpoint + path-style addressing so the same client
+    // works against any S3-compatible provider (e.g. Cloudflare R2, MinIO)
+    // as well as AWS S3. Leave S3_ENDPOINT unset to use AWS's default
+    // endpoint; the presign flow below is unchanged either way.
+    const endpoint = configService.get<string>('S3_ENDPOINT');
+    const forcePathStyle =
+      configService.get<string>('S3_FORCE_PATH_STYLE') === 'true';
+
     this.s3 = new S3Client({
       region:      configService.getOrThrow<string>('AWS_REGION'),
       credentials: {
         accessKeyId:     configService.getOrThrow<string>('AWS_ACCESS_KEY_ID'),
         secretAccessKey: configService.getOrThrow<string>('AWS_SECRET_ACCESS_KEY'),
       },
+      ...(endpoint ? { endpoint } : {}),
+      forcePathStyle,
     });
     this.bucket  = configService.getOrThrow<string>('S3_BUCKET');
     this.cdnBase = configService.getOrThrow<string>('CDN_BASE_URL');

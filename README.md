@@ -40,6 +40,11 @@ TypeScript errors, httpOnly cookie migration, and three smaller features.
    console. The exact policy JSON is written up in `docs/s3-cors-setup.md`. Until it's applied,
    media uploads will fail from the browser with a CORS error (the frontend now detects this
    specific failure mode and points at that doc instead of showing a generic error).
+
+   The media client is provider-agnostic: it uses AWS S3 by default, or any S3-compatible
+   provider (Cloudflare R2, MinIO, …) when `S3_ENDPOINT` is set — add `S3_FORCE_PATH_STYLE=true`
+   and `AWS_REGION=auto` for R2. Leave `S3_ENDPOINT` blank for AWS. The presign/upload flow is
+   identical either way. See `.env.example`.
 4. The httpOnly cookie `SameSite=Lax` choice (see below) assumes the frontend and backend end up
    on the same parent domain in production. If they're ever deployed to fully unrelated domains
    instead, this needs revisiting — `SameSite=None` would be required for cross-site cookies to
