@@ -11,6 +11,17 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
+// The fixed set of booker types (Postgres enum `booker_type`). One per booker.
+export const BOOKER_TYPES = [
+  'Event Planner',
+  'Venue',
+  'Restaurant',
+  'Bar',
+  'Wedding Planner',
+  'University',
+  'Other',
+];
+
 export class UpdatePlannerProfileDto {
   @IsOptional()
   @IsString()
@@ -45,6 +56,10 @@ export class UpdatePlannerProfileDto {
   @IsOptional()
   @IsObject()
   socialLinks?: Record<string, string>;
+
+  @IsOptional()
+  @IsIn(BOOKER_TYPES)
+  bookerType?: string;
 }
 
 // ----------------------------------------------------------------

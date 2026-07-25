@@ -31,6 +31,7 @@ export class PlannersService {
         'pp.social_links',
         'pp.thumbnail_url',
         'pp.created_at',
+        'pp.booker_type',
       );
 
     // Filters
@@ -126,6 +127,7 @@ export class PlannersService {
         'pp.created_at',
         'pp.avg_rating',
         'pp.review_count',
+        'pp.booker_type',
       )
       .first();
 
@@ -176,6 +178,7 @@ export class PlannersService {
     if (dto.locationCountry !== undefined) patch.location_country = dto.locationCountry;
     if (dto.eventTypes      !== undefined) patch.event_types      = JSON.stringify(dto.eventTypes);
     if (dto.socialLinks     !== undefined) patch.social_links     = JSON.stringify(dto.socialLinks);
+    if (dto.bookerType      !== undefined) patch.booker_type      = dto.bookerType;
 
     if (Object.keys(patch).length === 0) return profile;
 
