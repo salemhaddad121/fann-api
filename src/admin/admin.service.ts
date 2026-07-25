@@ -497,7 +497,7 @@ export class AdminService {
         'role',
         this.db.raw(`COUNT(*) AS count`),
       )
-      .groupBy(this.db.raw('DATE(created_at)'), 'role')
+      .groupByRaw('DATE(created_at), role')
       .orderBy('date', 'asc');
 
     // Fill in every date in the range with 0s so the frontend doesn't
@@ -596,7 +596,7 @@ export class AdminService {
     return this.db('categories as c')
       .join('category_groups as g', 'g.id', 'c.group_id')
       .leftJoin('artist_categories as ac', 'ac.category_id', 'c.id')
-      .groupBy('c.id', 'g.name', 'g.slug')
+      .groupBy('c.id', 'g.name', 'g.slug', 'g.sort_order')
       .orderBy('g.sort_order', 'asc')
       .orderBy('c.sort_order', 'asc')
       .select(

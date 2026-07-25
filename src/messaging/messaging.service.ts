@@ -134,7 +134,7 @@ export class MessagingService {
       this.db('messages as m')
         .join(
           this.db.raw(
-            `(SELECT user_id,
+            `(SELECT u.id AS user_id,
                 COALESCE(
                   (SELECT display_name FROM artist_profiles  WHERE user_id = u.id),
                   (SELECT display_name FROM planner_profiles WHERE user_id = u.id)
