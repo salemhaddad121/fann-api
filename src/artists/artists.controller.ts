@@ -48,6 +48,14 @@ export class ArtistsController {
     return this.artistsService.updateMe(userId, dto);
   }
 
+  // GET /artists/me/booker-types — this artist's bookings grouped by booker type
+  @Get('artists/me/booker-types')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('artist')
+  getBookerTypes(@CurrentUser('id') userId: string) {
+    return this.artistsService.getBookerTypeBreakdown(userId);
+  }
+
   // GET /artists/:id
   @Get('artists/:id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {

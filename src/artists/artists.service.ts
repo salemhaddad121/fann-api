@@ -268,4 +268,36 @@ export class ArtistsService {
       categories: categories.filter((c) => c.group_id === g.id),
     }));
   }
+
+  // ----------------------------------------------------------------
+  // "Who books you, by type" — this artist's bookings grouped by the
+  // booking party's booker_type (Venue, Event Planner, …). Bookers who
+  // haven't set a type yet are excluded. Ordered most-frequent first.
+  // ----------------------------------------------------------------
+  async getBookerTypeBreakdown(userId: string) {
+    const rows = await this.db('bookings as b')
+      .join('planner_profiles as pp', 'pp.user_id', 'b.planner_id')
+      .where('b.artist_id', userId)
+      .whereNotNull('pp.booker_type')
+      .groupBy('pp.booker_type')
+      .select('pp.booker_type as type')
+      .count('b.id as count');
+
+    const parsed = rows
+      .map((r: { type: string; count: string | number }) => ({
+        type: r.type,
+        count: Number(r.count),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const total = parsed.reduce((sum, r) => sum + r.count, 0);
+
+    return {
+      total,
+      breakdown: parsed.map((r) => ({
+        ...r,
+        pct: total ? Math.round((r.count / total) * 100) : 0,
+      })),
+    };
+  }
 }
