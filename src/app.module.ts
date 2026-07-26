@@ -30,14 +30,29 @@ import { AnalyticsModule }    from './analytics/analytics.module';
       useFactory: () => ({
         config: {
           client: 'postgresql',
-          connection: {
-            host:     process.env.DB_HOST     ?? 'localhost',
-            port:     Number(process.env.DB_PORT ?? 5432),
-            database: process.env.DB_NAME     ?? 'fann',
-            user:     process.env.DB_USER     ?? 'postgres',
-            password: process.env.DB_PASSWORD ?? '',
+          // DATABASE_URL wins when set. Hosted Postgres (Neon, Supabase,
+          // RDS) hands out one connection string carrying sslmode, and the
+          // discrete form below has no ssl option at all — it simply cannot
+          // connect to any of them. Passing the string through lets pg
+          // honour sslmode from the URL.
+          connection:
+            process.env.DATABASE_URL ?? {
+              host:     process.env.DB_HOST     ?? 'localhost',
+              port:     Number(process.env.DB_PORT ?? 5432),
+              database: process.env.DB_NAME     ?? 'fann',
+              user:     process.env.DB_USER     ?? 'postgres',
+              password: process.env.DB_PASSWORD ?? '',
+              // For a host that needs TLS but is addressed by parts.
+              ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: true } } : {}),
+            },
+          // Tunable because the right shape differs by host. A long-running
+          // container wants a warm floor; serverless wants DB_POOL_MIN=0,
+          // since every function instance holds its own pool and a floor of
+          // 2 burns a managed provider's connection cap for nothing.
+          pool: {
+            min: Number(process.env.DB_POOL_MIN ?? 2),
+            max: Number(process.env.DB_POOL_MAX ?? 10),
           },
-          pool: { min: 2, max: 10 },
         },
       }),
     }),
