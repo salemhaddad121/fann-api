@@ -174,7 +174,21 @@ export class ArtistsService {
       .orderBy('start_date', 'asc')
       .select('id', 'start_date', 'end_date', 'note');
 
-    return { ...profile, categories, media, availability };
+    // Completed bookings only — this replaced the star rating on the public
+    // profile, so it has to mean "jobs actually played", not "enquiries
+    // received". Accepted-but-not-yet-played and cancelled are excluded.
+    const bookingsRow = await this.db('bookings')
+      .where({ artist_id: profile.user_id, status: 'completed' })
+      .count('id as count')
+      .first();
+
+    return {
+      ...profile,
+      categories,
+      media,
+      availability,
+      bookings_count: aggregateValue(bookingsRow, 'count'),
+    };
   }
 
   // ----------------------------------------------------------------
