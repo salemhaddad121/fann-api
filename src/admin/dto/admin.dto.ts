@@ -39,13 +39,23 @@ export class ListUsersDto extends PaginationDto {
   @IsIn(['artist', 'planner', 'admin'])
   role?: UserRole;
 
+  // 'deleted' is not a real users.status value — soft-deleted accounts keep
+  // their old status and set deleted_at. It's accepted here as a filter so
+  // the admin list can offer the same five states it displays.
   @IsOptional()
-  @IsIn(['pending_review', 'active', 'suspended', 'banned'])
-  status?: UserStatus;
+  @IsIn(['pending_review', 'active', 'suspended', 'banned', 'deleted'])
+  status?: UserStatus | 'deleted';
 
   @IsOptional()
   @IsString()
   q?: string;
+}
+
+export class ResetUserPasswordDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }
 
 export class UpdateUserStatusDto {

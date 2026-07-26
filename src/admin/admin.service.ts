@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import * as bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
 import { aggregateValue } from '../common/db.util';
 import {
   AuditLogDto,
@@ -19,6 +21,29 @@ import {
   UpdateCategoryGroupDto,
   UpdateUserStatusDto,
 } from './dto/admin.dto';
+
+const BCRYPT_ROUNDS = 12;
+
+// Ambiguous characters (0/O, 1/l/I) are left out because these get read out
+// over the phone. Guarantees one of each class so the result always passes
+// the same complexity rule the signup form enforces.
+function generateTemporaryPassword(): string {
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const all = lower + upper + digits;
+
+  const pick = (set: string) => set[randomInt(set.length)];
+  const chars = [pick(lower), pick(upper), pick(digits)];
+  while (chars.length < 12) chars.push(pick(all));
+
+  // Fisher-Yates, so the guaranteed characters aren't always in front.
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
 
 @Injectable()
 export class AdminService {
@@ -52,8 +77,17 @@ export class AdminService {
         this.db.raw(`COALESCE(ap.thumbnail_url, pp.thumbnail_url) AS thumbnail_url`),
       );
 
-    if (dto.role)   query = query.where('u.role', dto.role);
-    if (dto.status) query = query.where('u.status', dto.status);
+    if (dto.role) query = query.where('u.role', dto.role);
+
+    // The five states the admin UI shows are mutually exclusive, so a
+    // soft-deleted account only matches 'deleted' — never its underlying
+    // status. That mirrors the badge, which reads "Deleted" whenever
+    // deleted_at is set no matter what status says.
+    if (dto.status === 'deleted') {
+      query = query.whereNotNull('u.deleted_at');
+    } else if (dto.status) {
+      query = query.where('u.status', dto.status).whereNull('u.deleted_at');
+    }
     if (dto.q) {
       query = query.where((b) =>
         b
@@ -138,6 +172,36 @@ export class AdminService {
     });
 
     return { message: `User status updated to ${dto.status}.` };
+  }
+
+  // Admin-initiated password reset for phone/WhatsApp support, where the
+  // usual emailed reset link isn't practical.
+  //
+  // The generated password is returned to the admin exactly once and is
+  // never stored in plaintext — only the bcrypt hash is written, and the
+  // audit row deliberately records that a reset happened without recording
+  // the value. Any existing refresh token is left alone by design here;
+  // changing the password does not itself end other sessions.
+  async resetUserPassword(adminId: string, userId: string, note?: string) {
+    const user = await this.db('users').where({ id: userId }).first();
+    if (!user) throw new NotFoundException('User not found.');
+    if (user.role === 'admin') {
+      throw new BadRequestException('Cannot reset the password of an admin account.');
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
+    await this.db('users').where({ id: userId }).update({
+      password_hash: passwordHash,
+      updated_at:    this.db.fn.now(),
+    });
+
+    await this.writeAudit(adminId, 'user_password_reset', userId, note);
+    await this.notify(userId, 'password_reset_by_admin', 'Your password was reset', {
+      ...(note && { note }),
+    });
+
+    return { temporaryPassword };
   }
 
   // ================================================================

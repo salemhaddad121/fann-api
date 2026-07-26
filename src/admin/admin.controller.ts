@@ -25,6 +25,7 @@ import {
   ReviewPaymentDto,
   UpdateCategoryDto,
   UpdateCategoryGroupDto,
+  ResetUserPasswordDto,
   UpdateUserStatusDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
@@ -88,6 +89,20 @@ export class AdminController {
     @Body() dto: UpdateUserStatusDto,
   ) {
     return this.adminService.updateUserStatus(adminId, userId, dto);
+  }
+
+  // POST /admin/users/:id/reset-password
+  // Returns a freshly generated temporary password, once. Nothing stores it
+  // in plaintext, so it cannot be retrieved again — the admin has to pass it
+  // to the user and then reset again if it's lost.
+  @Post('users/:id/reset-password')
+  @HttpCode(HttpStatus.OK)
+  resetUserPassword(
+    @CurrentUser('id') adminId: string,
+    @Param('id', ParseUUIDPipe) userId: string,
+    @Body() dto: ResetUserPasswordDto,
+  ) {
+    return this.adminService.resetUserPassword(adminId, userId, dto.note);
   }
 
   // ----------------------------------------------------------------
