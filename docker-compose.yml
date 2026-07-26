@@ -60,19 +60,22 @@ services:
       DB_NAME: fann
       DB_USER: postgres
       DB_PASSWORD: fann_dev
+      # Covers the one-time case of a local database created before tracking
+      # existed: its migrations demonstrably ran, so they get recorded rather
+      # than re-executed. Harmless once schema_migrations exists.
+      MIGRATE_BASELINE: "1"
     volumes:
       - ./migrations:/repo/migrations:ro
       - ./scripts:/repo/scripts:ro
+    # migrate.sh tracks what it has run in schema_migrations, so it is safe to
+    # invoke on every start — it applies only what is missing. It used to be
+    # skipped whenever the schema existed, which is exactly how the database
+    # drifted ahead of the repo without anything noticing.
     entrypoint:
       - bash
       - -c
       - |
-        export PGPASSWORD="$$DB_PASSWORD"
-        if psql -h "$$DB_HOST" -U "$$DB_USER" -d "$$DB_NAME" -tAc "SELECT to_regclass('public.users')" | grep -q users; then
-          echo "Schema already present — skipping migrations (docker compose down -v to reset)."
-        else
-          bash /repo/scripts/migrate.sh
-        fi
+        bash /repo/scripts/migrate.sh
 
   api:
     build: .
