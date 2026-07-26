@@ -3,3 +3,6 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Accidentally-committed local Postgres binary (38 MB) — never track it again
+postgresql_18.exe

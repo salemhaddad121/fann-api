@@ -62,6 +62,35 @@ TypeScript errors, httpOnly cookie migration, and three smaller features.
 
 ## Running it locally
 
+### Option A — Docker (recommended, no local Node/Postgres/Redis needed)
+
+The only prerequisites are Docker (Desktop on macOS/Windows) and Git. Clone the
+frontend repo as a **sibling** of this one, then:
+
+```bash
+# <parent>/fann-api  +  <parent>/Fann---Web  side by side
+cd fann-api
+docker compose up -d --build
+```
+
+That starts Postgres 18, Redis 7, applies every migration (including seed
+data) to a fresh database, and brings up the API on
+`http://localhost:4000/api/v1` and the web app on `http://localhost:3000`.
+Log in with any seeded account (see `migrations/009_fann_seed_data.sql`),
+password `Fann@dev2025`.
+
+Notes:
+- Migrations only run against an empty database (there's no
+  applied-migrations tracking). To re-run them from scratch:
+  `docker compose down -v && docker compose up -d`.
+- JWT secrets default to throwaway dev values; override `JWT_SECRET` /
+  `JWT_REFRESH_SECRET` via the environment for anything non-local. The same
+  goes for the placeholder AWS values — media uploads need real credentials.
+- Base images come from `public.ecr.aws/docker/library/*` — the same official
+  images as Docker Hub, without Hub auth/rate-limit issues.
+
+### Option B — natively
+
 ```bash
 npm install
 cp .env.example .env      # fill in JWT_SECRET / JWT_REFRESH_SECRET at minimum
