@@ -6,10 +6,21 @@ import { ConfigService } from '@nestjs/config';
 import { BookingsService } from '../bookings/bookings.service';
 import { ReviewsService, REVIEW_WINDOW_DAYS } from '../reviews/reviews.service';
 import { EmailService } from '../email/email.service';
+import { AnalyticsService, RETENTION_DAYS } from '../analytics/analytics.service';
 
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
+
+  // @Cron needs a process that stays alive, which is true in the container
+  // and false on Vercel, where each request is a short-lived function. On
+  // serverless the same methods are driven over HTTP by Vercel Cron via
+  // CronController, and this flag stops both triggers firing at once.
+  //
+  // Defaults to in-process, so existing deployments keep working untouched.
+  private get inProcessCronEnabled(): boolean {
+    return (this.configService.get<string>('SCHEDULER_MODE') ?? 'in-process') === 'in-process';
+  }
 
   constructor(
     @InjectConnection() private readonly db: Knex,
@@ -17,6 +28,7 @@ export class SchedulerService {
     private readonly reviewsService:  ReviewsService,
     private readonly emailService:    EmailService,
     private readonly configService:   ConfigService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -27,6 +39,14 @@ export class SchedulerService {
   // ----------------------------------------------------------------
   @Cron('0 6 * * *', { timeZone: 'UTC' })
   async handleDailyReviewTrigger() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runDailyReviewTrigger();
+  }
+
+  // The work itself. Called by the cron above in-process, or directly by
+  // CronController when Vercel Cron drives it over HTTP — the gate lives on
+  // the wrapper only, so the HTTP path is never short-circuited by it.
+  async runDailyReviewTrigger() {
     this.logger.log('[Scheduler] Daily review trigger started');
 
     try {
@@ -54,6 +74,11 @@ export class SchedulerService {
   // ----------------------------------------------------------------
   @Cron('30 6 * * *', { timeZone: 'UTC' })
   async handleExpiredReviewUnlock() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runExpiredReviewUnlock();
+  }
+
+  async runExpiredReviewUnlock() {
     this.logger.log('[Scheduler] Expired review unlock started');
 
     try {
@@ -61,6 +86,33 @@ export class SchedulerService {
       this.logger.log(`[Scheduler] Unlocked ${unlocked} review(s) past the ${REVIEW_WINDOW_DAYS}-day window`);
     } catch (err) {
       this.logger.error('[Scheduler] Expired review unlock failed', err);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Runs daily at 07:00 UTC — deletes page_events past the retention
+  // window. These rows are personal browsing history, so they are not kept
+  // indefinitely; the engagement metrics only look back 30 days.
+  //
+  // Deliberately after the two review jobs so a slow delete cannot delay
+  // anything user-facing.
+  // ----------------------------------------------------------------
+  @Cron('0 7 * * *', { timeZone: 'UTC' })
+  async handleDailyTelemetryPrune() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runTelemetryPrune();
+  }
+
+  async runTelemetryPrune() {
+    try {
+      const deleted = await this.analyticsService.pruneOldEvents();
+      if (deleted > 0) {
+        this.logger.log(
+          `[Scheduler] Pruned ${deleted} page_event(s) older than ${RETENTION_DAYS} days`,
+        );
+      }
+    } catch (err) {
+      this.logger.error('[Scheduler] Telemetry prune failed', err);
     }
   }
 
