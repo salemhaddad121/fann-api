@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { ReviewsService } from '../reviews/reviews.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import {
   AuditLogDto,
   CreateCategoryDto,
@@ -39,6 +40,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly reviewsService: ReviewsService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -74,6 +76,15 @@ export class AdminController {
   @Get('analytics/booker-types')
   getTopBookerTypes() {
     return this.adminService.getTopBookerTypes(3);
+  }
+
+  // GET /admin/analytics/engagement
+  // Average foreground time per active day, split by role, overall and on
+  // the search page. Backed by page_events, which only started collecting
+  // when migration 014 ran — expect it to be empty until real usage lands.
+  @Get('analytics/engagement')
+  getEngagement() {
+    return this.analyticsService.getEngagement();
   }
 
   // ----------------------------------------------------------------

@@ -18,6 +18,7 @@ import { BookingsModule }     from './bookings/bookings.module';
 import { ReviewsModule }      from './reviews/reviews.module';
 import { SchedulerModule }    from './scheduler/scheduler.module';
 import { SavedModule }        from './saved/saved.module';
+import { AnalyticsModule }    from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { SavedModule }        from './saved/saved.module';
     ReviewsModule,
     SchedulerModule,
     SavedModule,
+    AnalyticsModule,
   ],
   providers: [
     // Global validation pipe — applies to every route automatically

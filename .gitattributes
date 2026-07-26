@@ -1,0 +1,11 @@
+# Shell scripts and SQL run inside Linux containers. Without this, git on
+# Windows checks them out with CRLF and bash fails immediately with
+# "$'\r': command not found" — which is what happened to scripts/migrate.sh
+# the first time it went through a checkout.
+*.sh   text eol=lf
+*.sql  text eol=lf
+
+# Same reasoning: these are read by tooling in the container, not by editors
+# on the host.
+Dockerfile     text eol=lf
+.dockerignore  text eol=lf
