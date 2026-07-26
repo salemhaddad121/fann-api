@@ -64,6 +64,18 @@ export class AdminController {
     return this.adminService.getGeographyBreakdown();
   }
 
+  // GET /admin/analytics/booked-categories
+  @Get('analytics/booked-categories')
+  getTopBookedCategories() {
+    return this.adminService.getTopBookedCategories(5);
+  }
+
+  // GET /admin/analytics/booker-types
+  @Get('analytics/booker-types')
+  getTopBookerTypes() {
+    return this.adminService.getTopBookerTypes(3);
+  }
+
   // ----------------------------------------------------------------
   // Users
   // ----------------------------------------------------------------

@@ -587,6 +587,47 @@ export class AdminService {
 
   // Profile count by city, combining both roles — a real substitute for
   // the mockup's fictional "sign-ups by region" map.
+  // Which artist categories are actually getting booked, and which kinds of
+  // booker are doing the booking. Both count CONFIRMED bookings only —
+  // accepted plus completed. A declined or cancelled booking is not a
+  // booking, and a pending one is not one yet.
+  //
+  // Caveat worth knowing when reading the numbers: an artist can hold
+  // several categories, so one booking of a DJ who is also tagged Singer
+  // counts toward both. The column answers "how many bookings involved this
+  // category", which means the totals will not sum to the booking count.
+  private static readonly CONFIRMED_BOOKING_STATUSES = ['accepted', 'completed'];
+
+  async getTopBookedCategories(limit = 5) {
+    const rows = await this.db('bookings as b')
+      .join('artist_profiles as ap', 'ap.user_id', 'b.artist_id')
+      .join('artist_categories as ac', 'ac.artist_profile_id', 'ap.id')
+      .join('categories as c', 'c.id', 'ac.category_id')
+      .whereIn('b.status', AdminService.CONFIRMED_BOOKING_STATUSES)
+      .select('c.name as category')
+      .count('* as count')
+      .groupBy('c.name')
+      .orderBy([{ column: 'count', order: 'desc' }, { column: 'c.name', order: 'asc' }])
+      .limit(limit);
+
+    return rows.map((r) => ({ category: r.category, count: Number(r.count) }));
+  }
+
+  async getTopBookerTypes(limit = 3) {
+    const rows = await this.db('bookings as b')
+      .join('planner_profiles as pp', 'pp.user_id', 'b.planner_id')
+      .whereIn('b.status', AdminService.CONFIRMED_BOOKING_STATUSES)
+      // booker_type is an enum, so it needs a cast before COALESCE can fall
+      // back to a plain string for profiles that never set one.
+      .select(this.db.raw(`COALESCE(pp.booker_type::text, 'Unspecified') AS booker_type`))
+      .count('* as count')
+      .groupByRaw(`COALESCE(pp.booker_type::text, 'Unspecified')`)
+      .orderBy([{ column: 'count', order: 'desc' }, { column: 'booker_type', order: 'asc' }])
+      .limit(limit);
+
+    return rows.map((r) => ({ bookerType: r.booker_type, count: Number(r.count) }));
+  }
+
   async getGeographyBreakdown() {
     const artistCities = this.db('artist_profiles')
       .whereNotNull('location_city')
