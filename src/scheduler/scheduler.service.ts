@@ -12,6 +12,16 @@ import { AnalyticsService, RETENTION_DAYS } from '../analytics/analytics.service
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
 
+  // @Cron needs a process that stays alive, which is true in the container
+  // and false on Vercel, where each request is a short-lived function. On
+  // serverless the same methods are driven over HTTP by Vercel Cron via
+  // CronController, and this flag stops both triggers firing at once.
+  //
+  // Defaults to in-process, so existing deployments keep working untouched.
+  private get inProcessCronEnabled(): boolean {
+    return (this.configService.get<string>('SCHEDULER_MODE') ?? 'in-process') === 'in-process';
+  }
+
   constructor(
     @InjectConnection() private readonly db: Knex,
     private readonly bookingsService: BookingsService,
@@ -29,6 +39,14 @@ export class SchedulerService {
   // ----------------------------------------------------------------
   @Cron('0 6 * * *', { timeZone: 'UTC' })
   async handleDailyReviewTrigger() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runDailyReviewTrigger();
+  }
+
+  // The work itself. Called by the cron above in-process, or directly by
+  // CronController when Vercel Cron drives it over HTTP — the gate lives on
+  // the wrapper only, so the HTTP path is never short-circuited by it.
+  async runDailyReviewTrigger() {
     this.logger.log('[Scheduler] Daily review trigger started');
 
     try {
@@ -56,6 +74,11 @@ export class SchedulerService {
   // ----------------------------------------------------------------
   @Cron('30 6 * * *', { timeZone: 'UTC' })
   async handleExpiredReviewUnlock() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runExpiredReviewUnlock();
+  }
+
+  async runExpiredReviewUnlock() {
     this.logger.log('[Scheduler] Expired review unlock started');
 
     try {
@@ -76,6 +99,11 @@ export class SchedulerService {
   // ----------------------------------------------------------------
   @Cron('0 7 * * *', { timeZone: 'UTC' })
   async handleDailyTelemetryPrune() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runTelemetryPrune();
+  }
+
+  async runTelemetryPrune() {
     try {
       const deleted = await this.analyticsService.pruneOldEvents();
       if (deleted > 0) {
