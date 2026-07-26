@@ -9,10 +9,33 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
+    // REDIS_URL wins when present. Hosted Redis (Upstash, Redis Cloud) hands
+    // out a single rediss:// string, and crucially requires TLS — the
+    // discrete host/port/password form below has no TLS and silently fails
+    // to connect against them.
+    //
+    // The local Docker Redis has no TLS and no URL, so it keeps using the
+    // discrete variables and is unaffected.
+    const url = this.configService.get<string>('REDIS_URL');
+
+    if (url) {
+      this.client = new Redis(url, {
+        // Serverless dials on cold start; failing fast and retrying beats a
+        // request hanging on a connection that will not come up.
+        maxRetriesPerRequest: 3,
+        // ioredis infers TLS from the rediss:// scheme, but hosts that
+        // publish a redis:// URL while still requiring TLS are common
+        // enough to be worth the explicit escape hatch.
+        ...(this.configService.get<string>('REDIS_TLS') === 'true' ? { tls: {} } : {}),
+      });
+      return;
+    }
+
     this.client = new Redis({
       host: this.configService.get<string>('REDIS_HOST', 'localhost'),
       port: this.configService.get<number>('REDIS_PORT', 6379),
       password: this.configService.get<string>('REDIS_PASSWORD'),
+      ...(this.configService.get<string>('REDIS_TLS') === 'true' ? { tls: {} } : {}),
     });
   }
 
