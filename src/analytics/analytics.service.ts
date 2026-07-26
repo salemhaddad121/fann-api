@@ -7,6 +7,11 @@ import { RecordPageEventsDto } from './dto/analytics.dto';
 // quiet days, short enough that a metric still reacts to a change.
 const WINDOW_DAYS = 30;
 
+// Raw rows are personal browsing history, so they are not kept
+// indefinitely. Comfortably longer than the reporting window above, so
+// pruning can never eat data a metric still needs.
+export const RETENTION_DAYS = 90;
+
 @Injectable()
 export class AnalyticsService {
   constructor(@InjectConnection() private readonly db: Knex) {}
@@ -64,6 +69,19 @@ export class AnalyticsService {
       avgMsPerActiveDay: Math.round(Number(r.avg_ms) || 0),
       users: Number(r.users) || 0,
     }));
+  }
+
+  // Deletes raw events past the retention window. Called from the daily
+  // scheduler — see SchedulerService.handleDailyTelemetryPrune.
+  //
+  // Nothing is aggregated into a rollup first, so pruning genuinely loses
+  // the old detail. That is the intent: the metrics only ever look back
+  // WINDOW_DAYS, and keeping a year of per-page browsing history to serve a
+  // 30-day average would be collecting more than the feature needs.
+  async pruneOldEvents(retentionDays = RETENTION_DAYS): Promise<number> {
+    return this.db('page_events')
+      .where('occurred_at', '<', this.db.raw(`now() - interval '${retentionDays} days'`))
+      .del();
   }
 
   async getEngagement() {

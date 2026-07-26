@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { BookingsService } from '../bookings/bookings.service';
 import { ReviewsService, REVIEW_WINDOW_DAYS } from '../reviews/reviews.service';
 import { EmailService } from '../email/email.service';
+import { AnalyticsService, RETENTION_DAYS } from '../analytics/analytics.service';
 
 @Injectable()
 export class SchedulerService {
@@ -17,6 +18,7 @@ export class SchedulerService {
     private readonly reviewsService:  ReviewsService,
     private readonly emailService:    EmailService,
     private readonly configService:   ConfigService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -61,6 +63,28 @@ export class SchedulerService {
       this.logger.log(`[Scheduler] Unlocked ${unlocked} review(s) past the ${REVIEW_WINDOW_DAYS}-day window`);
     } catch (err) {
       this.logger.error('[Scheduler] Expired review unlock failed', err);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Runs daily at 07:00 UTC — deletes page_events past the retention
+  // window. These rows are personal browsing history, so they are not kept
+  // indefinitely; the engagement metrics only look back 30 days.
+  //
+  // Deliberately after the two review jobs so a slow delete cannot delay
+  // anything user-facing.
+  // ----------------------------------------------------------------
+  @Cron('0 7 * * *', { timeZone: 'UTC' })
+  async handleDailyTelemetryPrune() {
+    try {
+      const deleted = await this.analyticsService.pruneOldEvents();
+      if (deleted > 0) {
+        this.logger.log(
+          `[Scheduler] Pruned ${deleted} page_event(s) older than ${RETENTION_DAYS} days`,
+        );
+      }
+    } catch (err) {
+      this.logger.error('[Scheduler] Telemetry prune failed', err);
     }
   }
 
