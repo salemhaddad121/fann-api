@@ -1,4 +1,9 @@
-# S3 bucket CORS setup (media uploads)
+# Bucket CORS setup (media uploads)
+
+> **Current setup: Cloudflare R2, bucket `fann-media`.** The project moved
+> off AWS S3, so read the R2 section at the bottom — it is the one that
+> applies. The AWS instructions are kept because the underlying S3 API and
+> the policy format are identical; only the console differs.
 
 ## Why this is needed
 
@@ -71,3 +76,36 @@ double check:
 - You saved the change in the correct bucket (if there's more than one,
   e.g. separate staging/production buckets).
 - It can take a minute or two for the change to propagate.
+
+## Cloudflare R2 (what this project actually uses)
+
+Same policy, different console — and it **cannot be set with the S3 API
+token** the app uses. That token is scoped to object read/write, so
+`GetBucketCors` and `PutBucketCors` both return `AccessDenied`. This has to
+be done in the dashboard, or with an API token that has R2 admin rights.
+
+**R2 → `fann-media` → Settings → CORS Policy → Edit**, then paste:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "https://fann.guru",
+      "https://www.fann.guru"
+    ],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["Content-Type"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+Add `"https://*.vercel.app"` as well once the frontend is deploying to
+Vercel, otherwise uploads will work in production but fail on every
+preview deployment — which is exactly where they get tested first.
+
+Note `AllowedOrigins` here is about the **upload** (`PUT` straight to the
+bucket). Serving media back out is a separate concern handled by the
+`cdn.fann.guru` custom domain, and needs no CORS entry — the browser
+loads those as plain `<img>`/`<video>` sources, not fetches.
