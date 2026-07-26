@@ -97,12 +97,19 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-do-not-use-in-production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-only-refresh-secret-do-not-use-in-production}
       # MediaService getOrThrow()s these at boot (README overstates how
-      # optional S3 is). Placeholders keep the app up; media upload calls
-      # will fail until real AWS credentials replace them.
+      # optional S3 is). The defaults below are placeholders that keep the
+      # app booting; real values come from fann-api/.env, which is
+      # gitignored — never put credentials in this file, it is tracked.
+      #
+      # For Cloudflare R2, .env must set AWS_REGION=auto,
+      # S3_FORCE_PATH_STYLE=true and S3_ENDPOINT to the account endpoint
+      # (https://<account-id>.r2.cloudflarestorage.com).
       AWS_REGION: ${AWS_REGION:-eu-west-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-placeholder}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-placeholder}
       S3_BUCKET: ${S3_BUCKET:-fann-media}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
       CDN_BASE_URL: ${CDN_BASE_URL:-https://cdn.fann.app}
     ports:
       - "4000:4000"
