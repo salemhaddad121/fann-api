@@ -150,6 +150,11 @@ export class ArtistsService {
         // Rating aggregates — populated by reviews.service.ts
         'ap.avg_rating',
         'ap.review_count',
+        // When the account was created, for "Date joined" on the public
+        // profile. Deliberately the user row, not ap.created_at — the
+        // profile row is written after the account, so they differ by up
+        // to a day.
+        'u.created_at as joined_at',
       )
       .first();
 
@@ -196,11 +201,15 @@ export class ArtistsService {
   // ----------------------------------------------------------------
   async findMe(userId: string) {
     const profile = await this.db('artist_profiles as ap')
+      .join('users as u', 'u.id', 'ap.user_id')
       .where('ap.user_id', userId)
       .select(
         'ap.*',
         'ap.avg_rating',
         'ap.review_count',
+        // Same "Date joined" value the public profile shows, so an artist
+        // previewing their own page sees the same thing planners do.
+        'u.created_at as joined_at',
       )
       .first();
 
