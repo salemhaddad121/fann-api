@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Put,
   Query,
@@ -15,6 +16,7 @@ import { MessagingService } from './messaging.service';
 import {
   CreateConversationDto,
   GetMessagesDto,
+  RespondToRequestDto,
   SendMessageDto,
 } from './dto/messaging.dto';
 import { JwtAuthGuard } from '../auth/guards/auth.guards';
@@ -33,13 +35,26 @@ export class MessagingController {
   }
 
   // POST /conversations
-  // Planners only. Creates or returns an existing thread with an artist.
+  // Planners send artistId and get an open thread. Artists send plannerId
+  // and get a pending request the planner has to accept.
   @Post()
   create(
     @CurrentUser() user: UserRecord,
     @Body() dto: CreateConversationDto,
   ) {
     return this.messagingService.createConversation(user, dto);
+  }
+
+  // PATCH /conversations/:id/respond
+  // Planner accepts or declines an artist's message request.
+  @Patch(':id/respond')
+  @HttpCode(HttpStatus.OK)
+  respondToRequest(
+    @CurrentUser() user: UserRecord,
+    @Param('id', ParseUUIDPipe) conversationId: string,
+    @Body() dto: RespondToRequestDto,
+  ) {
+    return this.messagingService.respondToRequest(user, conversationId, dto.decision);
   }
 
   // GET /conversations/:id
