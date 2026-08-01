@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsNotEmpty,
   IsString,
   IsUUID,
@@ -11,11 +12,28 @@ import {
 import { Type } from 'class-transformer';
 
 // ----------------------------------------------------------------
-// Start a conversation (planner → artist)
+// Start a conversation
+//
+// A planner sends artistId; an artist sends plannerId. Both are optional
+// at the DTO level because which one is required depends on the caller's
+// role — the service rejects the wrong pairing with a clear message.
 // ----------------------------------------------------------------
 export class CreateConversationDto {
+  @IsOptional()
   @IsUUID()
-  artistId: string; // the artist's user UUID
+  artistId?: string; // the artist's user UUID — sent by planners
+
+  @IsOptional()
+  @IsUUID()
+  plannerId?: string; // the planner's user UUID — sent by artists
+}
+
+// ----------------------------------------------------------------
+// Planner accepts or declines an artist's message request
+// ----------------------------------------------------------------
+export class RespondToRequestDto {
+  @IsIn(['accepted', 'declined'])
+  decision: 'accepted' | 'declined';
 }
 
 // ----------------------------------------------------------------
