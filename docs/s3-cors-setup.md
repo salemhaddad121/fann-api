@@ -21,9 +21,11 @@ actual file upload. The fix has to be applied to the S3 bucket itself, in
 the AWS console (or via the AWS CLI/Terraform, if this project ever
 adopts infrastructure-as-code).
 
-Until this is set, uploads will fail in the browser with a generic
-network error — the frontend now specifically detects this pattern and
-points people at this doc (see `MediaManager.tsx`).
+Until this is set, uploads either fail in the browser with a generic
+network error, or — if `ExposeHeaders` is missing — hang at 100% with no
+error at all. The frontend detects the first pattern and points people at
+this doc (see `MediaManager.tsx`); it cannot detect the second, because
+nothing fails.
 
 ## The policy to add
 
@@ -38,8 +40,9 @@ origin with your actual production frontend URL once you have one):
       "http://localhost:3000",
       "https://your-production-frontend-domain.com"
     ],
-    "AllowedMethods": ["PUT"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
     "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3000
   }
 ]
@@ -52,14 +55,28 @@ origin with your actual production frontend URL once you have one):
   once you have one (you can list as many as you need — one per
   environment). Wildcards like `https://*.vercel.app` are allowed if
   you're on a platform with preview-deploy subdomains.
-- `AllowedMethods` — only `PUT` is needed; that's the only method the
-  upload flow uses against S3 directly. You don't need to list `OPTIONS` —
-  S3 handles the preflight automatically based on this same rule.
+- `AllowedMethods` — `PUT` is what the upload itself uses; `GET`/`HEAD`
+  cover reads against the bucket endpoint. You don't need to list
+  `OPTIONS` — S3 handles the preflight automatically based on this same
+  rule.
 - `AllowedHeaders` — `Content-Type` is the only custom header the upload
   request sets (see `uploadMedia()`). If a future change to the upload
   flow adds more headers (e.g. `x-amz-*` metadata headers), they'd need
   to be added here too, or the browser will block the request the same
   way.
+- **`ExposeHeaders` — `ETag` is required, and leaving it out is not a
+  soft failure.** Browsers hide every response header from JavaScript
+  except a small safelist, and `ETag` is not on it. The uploader
+  (`@uppy/aws-s3`, non-multipart) reads `ETag` off the `PUT` response to
+  decide the upload finished. When it can't, it logs *"Could not read the
+  ETag header"* and then **bare-`return`s out of its promise without
+  resolving or rejecting** — see `node_modules/@uppy/aws-s3/lib/index.js`
+  around the `if (etag == null)` branch. The result is an upload that sits
+  at 100% forever with no error: the bytes land in the bucket, but
+  `complete` never fires, so `POST /media/confirm` never runs and no
+  `media` row is created. That leaves orphaned objects in R2 that the app
+  cannot see. This bit us on 2026-08-05; two 1.8MB PNGs were sitting in
+  `uploads/…/` with no matching rows.
 - `MaxAgeSeconds` — how long the browser caches the preflight response;
   3000 is the value AWS uses in its own docs and examples, no need to
   tune this.
@@ -94,12 +111,17 @@ be done in the dashboard, or with an API token that has R2 admin rights.
       "https://fann.guru",
       "https://www.fann.guru"
     ],
-    "AllowedMethods": ["PUT"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
     "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3000
   }
 ]
 ```
+
+`ExposeHeaders: ["ETag"]` is the line that matters most — without it
+uploads hang at 100% rather than failing, which looks like a network
+problem and isn't. See the field notes above.
 
 Add `"https://*.vercel.app"` as well once the frontend is deploying to
 Vercel, otherwise uploads will work in production but fail on every
