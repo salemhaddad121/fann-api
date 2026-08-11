@@ -233,3 +233,25 @@ export class UpdateCategoryGroupDto {
   @Min(0)
   sortOrder?: number;
 }
+
+// ----------------------------------------------------------------
+// List verification records
+// ----------------------------------------------------------------
+export class ListVerificationsDto {
+  @IsOptional()
+  @IsIn(['pending', 'passed', 'failed', 'manually_approved'])
+  result?: 'pending' | 'passed' | 'failed' | 'manually_approved';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number = 50;
+}

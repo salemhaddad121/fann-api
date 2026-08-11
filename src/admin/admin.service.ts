@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
+import { VerificationService } from '../verification/verification.service';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
 import { aggregateValue } from '../common/db.util';
@@ -47,7 +48,10 @@ function generateTemporaryPassword(): string {
 
 @Injectable()
 export class AdminService {
-  constructor(@InjectConnection() private readonly db: Knex) {}
+  constructor(
+    @InjectConnection() private readonly db: Knex,
+    private readonly verificationService: VerificationService,
+  ) {}
 
   // ================================================================
   // USERS
@@ -156,6 +160,16 @@ export class AdminService {
     } as const;
 
     await this.writeAudit(adminId, actionMap[dto.status], userId, dto.note);
+
+    // Mirror the decision onto the verification record. 'active' is the
+    // approval; suspended/banned settle it as failed. Anything else leaves
+    // the record pending.
+    await this.verificationService.recordAdminDecision(
+      userId,
+      adminId,
+      dto.status === 'active',
+      dto.note,
+    );
 
     const titleMap = {
       active:    'Your account has been approved',
