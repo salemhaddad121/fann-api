@@ -1,6 +1,7 @@
 import {
   Controller,
   ForbiddenException,
+  Get,
   Headers,
   HttpCode,
   HttpStatus,
@@ -23,6 +24,16 @@ import { SchedulerService } from './scheduler.service';
 // twice: 'in-process' (the default, and what the container uses) keeps the
 // @Cron decorators active and refuses these endpoints; 'http' does the
 // opposite.
+//
+// EACH ROUTE ANSWERS BOTH GET AND POST. Vercel Cron invokes with GET — this
+// was POST-only until 2026-08-07, so every scheduled run since the project
+// went live 404'd and none of the work below ever ran in production. Proven
+// in the runtime logs:
+//
+//   07:00:40 GET /api/v1/cron/telemetry-prune 404
+//
+// which is exactly the `0 7 * * *` slot. POST is kept so the jobs can still
+// be triggered by hand with curl.
 @Controller('cron')
 export class CronController {
   constructor(
@@ -53,6 +64,17 @@ export class CronController {
     }
   }
 
+  // Stacking @Get and @Post on one handler does NOT register both — the
+  // second decorator overwrites the first, and Nest maps only one verb. So
+  // each job gets a thin handler per verb, both delegating to one
+  // implementation.
+
+  @Get('daily-review-trigger')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async dailyReviewTriggerGet(@Headers('authorization') authorization?: string) {
+    return this.dailyReviewTrigger(authorization);
+  }
+
   @Post('daily-review-trigger')
   @HttpCode(HttpStatus.NO_CONTENT)
   async dailyReviewTrigger(@Headers('authorization') authorization?: string) {
@@ -60,11 +82,23 @@ export class CronController {
     await this.scheduler.runDailyReviewTrigger();
   }
 
+  @Get('expired-review-unlock')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async expiredReviewUnlockGet(@Headers('authorization') authorization?: string) {
+    return this.expiredReviewUnlock(authorization);
+  }
+
   @Post('expired-review-unlock')
   @HttpCode(HttpStatus.NO_CONTENT)
   async expiredReviewUnlock(@Headers('authorization') authorization?: string) {
     this.assertAuthorised(authorization);
     await this.scheduler.runExpiredReviewUnlock();
+  }
+
+  @Get('telemetry-prune')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async telemetryPruneGet(@Headers('authorization') authorization?: string) {
+    return this.telemetryPrune(authorization);
   }
 
   @Post('telemetry-prune')
