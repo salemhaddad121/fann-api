@@ -43,6 +43,9 @@ function makeService() {
   const configService = {
     get: jest.fn(() => 'http://localhost:3000'),
   };
+  const consentService = {
+    record: jest.fn(),
+  };
 
   const service = new AuthService(
     usersService as any,
@@ -50,9 +53,10 @@ function makeService() {
     redisService as any,
     emailService as any,
     configService as any,
+    consentService as any,
   );
 
-  return { service, usersService, redisService, emailService };
+  return { service, usersService, redisService, emailService, consentService };
 }
 
 describe('AuthService', () => {

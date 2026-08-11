@@ -16,6 +16,7 @@ import { EmailService } from '../email/email.service';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { RegisterDto } from './dto/auth.dto';
 import { UserRecord, UserRole } from '../users/users.types';
+import { ConsentService, ConsentContext } from '../consent/consent.service';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -27,12 +28,16 @@ export class AuthService {
     private readonly redisService: RedisService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly consentService: ConsentService,
   ) {}
 
   // ----------------------------------------------------------------
   // Register
   // ----------------------------------------------------------------
-  async register(dto: RegisterDto): Promise<{ message: string }> {
+  async register(
+    dto: RegisterDto,
+    context: ConsentContext = {},
+  ): Promise<{ message: string }> {
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const user = await this.usersService.create({
@@ -41,6 +46,12 @@ export class AuthService {
       role:         dto.role,
       phone:        dto.phone,
     });
+
+    // Recorded before the verification email so a failure to send can't
+    // leave an account whose consent went unrecorded. The DTO rejects
+    // anything but `true` on both, so reaching here means both were
+    // accepted.
+    await this.consentService.record(user.id, ['terms', 'privacy'], context);
 
     await this.sendEmailVerification(user);
 

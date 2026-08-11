@@ -39,9 +39,52 @@ describe('RegisterDto', () => {
       email: 'artist@example.com',
       password: 'Str0ngPass',
       role: 'artist',
+      acceptedTerms: true,
+      acceptedPrivacy: true,
     });
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
+  });
+
+  // The checkbox has to be enforced server-side, not only in the browser —
+  // otherwise the consent row we store is evidence of nothing.
+  it('rejects a registration that omits consent entirely', async () => {
+    const dto = plainToInstance(RegisterDto, {
+      email: 'artist@example.com',
+      password: 'Str0ngPass',
+      role: 'artist',
+    });
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'acceptedTerms')).toBe(true);
+    expect(errors.some((e) => e.property === 'acceptedPrivacy')).toBe(true);
+  });
+
+  // @IsBoolean would let `false` through; Equals(true) is what makes it
+  // mandatory rather than merely present.
+  it('rejects consent explicitly declined', async () => {
+    const dto = plainToInstance(RegisterDto, {
+      email: 'artist@example.com',
+      password: 'Str0ngPass',
+      role: 'artist',
+      acceptedTerms: false,
+      acceptedPrivacy: false,
+    });
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'acceptedTerms')).toBe(true);
+    expect(errors.some((e) => e.property === 'acceptedPrivacy')).toBe(true);
+  });
+
+  it('rejects accepting only one of the two', async () => {
+    const dto = plainToInstance(RegisterDto, {
+      email: 'artist@example.com',
+      password: 'Str0ngPass',
+      role: 'artist',
+      acceptedTerms: true,
+      acceptedPrivacy: false,
+    });
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'acceptedTerms')).toBe(false);
+    expect(errors.some((e) => e.property === 'acceptedPrivacy')).toBe(true);
   });
 
   it('rejects an invalid email', async () => {
@@ -49,6 +92,8 @@ describe('RegisterDto', () => {
       email: 'not-an-email',
       password: 'Str0ngPass',
       role: 'artist',
+      acceptedTerms: true,
+      acceptedPrivacy: true,
     });
     const errors = await validate(dto);
     expect(errors.some((e) => e.property === 'email')).toBe(true);
