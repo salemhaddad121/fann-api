@@ -17,6 +17,7 @@ import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { RegisterDto } from './dto/auth.dto';
 import { UserRecord, UserRole } from '../users/users.types';
 import { ConsentService, ConsentContext } from '../consent/consent.service';
+import { VerificationService } from '../verification/verification.service';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -29,6 +30,7 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
     private readonly consentService: ConsentService,
+    private readonly verificationService: VerificationService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -52,6 +54,11 @@ export class AuthService {
     // anything but `true` on both, so reaching here means both were
     // accepted.
     await this.consentService.record(user.id, ['terms', 'privacy'], context);
+
+    // Opens the verification record while the request context is still
+    // available. Consent is recorded first so the snapshot it copies is
+    // populated.
+    await this.verificationService.openForSignup(user.id, context);
 
     await this.sendEmailVerification(user);
 

@@ -46,6 +46,9 @@ function makeService() {
   const consentService = {
     record: jest.fn(),
   };
+  const verificationService = {
+    openForSignup: jest.fn(),
+  };
 
   const service = new AuthService(
     usersService as any,
@@ -54,9 +57,10 @@ function makeService() {
     emailService as any,
     configService as any,
     consentService as any,
+    verificationService as any,
   );
 
-  return { service, usersService, redisService, emailService, consentService };
+  return { service, usersService, redisService, emailService, consentService, verificationService };
 }
 
 describe('AuthService', () => {

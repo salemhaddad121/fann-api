@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { VerificationService } from '../verification/verification.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import {
@@ -28,6 +29,7 @@ import {
   UpdateCategoryGroupDto,
   ResetUserPasswordDto,
   UpdateUserStatusDto,
+  ListVerificationsDto,
 } from './dto/admin.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
 import { CurrentUser, Roles } from '../auth/decorators/auth.decorators';
@@ -41,6 +43,7 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly reviewsService: ReviewsService,
     private readonly analyticsService: AnalyticsService,
+    private readonly verificationService: VerificationService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -301,5 +304,28 @@ export class AdminController {
     @Param('id', ParseUUIDPipe) reviewId: string,
   ) {
     return this.adminService.removeReview(adminId, reviewId, this.reviewsService);
+  }
+
+  // ----------------------------------------------------------------
+  // Verification records
+  //
+  // The identity-verification audit trail. Provider-sourced fields are
+  // empty until a provider is integrated — see migration 017.
+  // ----------------------------------------------------------------
+
+  // GET /admin/verifications?result=&page=&limit=
+  @Get('verifications')
+  listVerifications(@Query() dto: ListVerificationsDto) {
+    return this.verificationService.list({
+      result: dto.result,
+      page: dto.page,
+      limit: dto.limit,
+    });
+  }
+
+  // GET /admin/verifications/user/:userId — full history for one account
+  @Get('verifications/user/:userId')
+  listUserVerifications(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.verificationService.listForUser(userId);
   }
 }
