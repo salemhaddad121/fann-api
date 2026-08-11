@@ -1,4 +1,5 @@
 import {
+  Equals,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -32,6 +33,16 @@ export class RegisterDto {
   @IsString()
   @Matches(/^\+?[1-9]\d{6,14}$/, { message: 'Enter a valid international phone number.' })
   phone?: string;
+
+  // Both are required and must be literally true. @IsBoolean alone would
+  // accept `false`, which is the one value that must not get through —
+  // Equals(true) is what makes the checkbox mandatory server-side rather
+  // than only in the browser.
+  @Equals(true, { message: 'You must accept the Terms of Service to sign up.' })
+  acceptedTerms: boolean;
+
+  @Equals(true, { message: 'You must accept the Privacy Policy to sign up.' })
+  acceptedPrivacy: boolean;
 }
 
 // ----------------------------------------------------------------

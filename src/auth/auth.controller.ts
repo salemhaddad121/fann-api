@@ -17,6 +17,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { clientIp } from '../common/request.util';
 import {
   AppleConfiguredGuard,
   GoogleConfiguredGuard,
@@ -52,8 +53,15 @@ export class AuthController {
   @Post('register')
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: Request) {
+    // Captured here rather than in the service: an acceptance without the
+    // address and client that made it is weak evidence, and only the
+    // request layer knows them. x-forwarded-for first — behind Vercel the
+    // socket address is the proxy, not the user.
+    return this.authService.register(dto, {
+      ipAddress: clientIp(req),
+      userAgent: req.headers['user-agent'] ?? null,
+    });
   }
 
   // ----------------------------------------------------------------
