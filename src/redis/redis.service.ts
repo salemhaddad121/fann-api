@@ -1,10 +1,17 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { classifyRedisError } from './redis-error';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
+  private readonly logger = new Logger(RedisService.name);
+
+  // Connection history, used to tell an idle reconnect apart from an
+  // outage — see redis-error.ts.
+  private hasConnected = false;
+  private consecutiveErrors = 0;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -28,6 +35,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         // enough to be worth the explicit escape hatch.
         ...(this.configService.get<string>('REDIS_TLS') === 'true' ? { tls: {} } : {}),
       });
+      this.attachDiagnostics();
       return;
     }
 
@@ -36,6 +44,51 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       port: this.configService.get<number>('REDIS_PORT', 6379),
       password: this.configService.get<string>('REDIS_PASSWORD'),
       ...(this.configService.get<string>('REDIS_TLS') === 'true' ? { tls: {} } : {}),
+    });
+    this.attachDiagnostics();
+  }
+
+  /**
+   * Without an 'error' listener ioredis prints "Unhandled error event" for
+   * every dropped connection, which on serverless is constant background
+   * noise — and noise is what hides a real failure. This attaches one and
+   * grades what it receives.
+   *
+   * Note this only changes reporting. ioredis reconnects on its own either
+   * way; commands already fail through maxRetriesPerRequest.
+   */
+  private attachDiagnostics() {
+    this.client.on('ready', () => {
+      if (this.consecutiveErrors > 0) {
+        // Worth saying out loud: it closes off an incident that may have
+        // been reported at error level a moment earlier.
+        this.logger.log(
+          `Redis connection restored after ${this.consecutiveErrors} consecutive error(s).`,
+        );
+      }
+      this.hasConnected = true;
+      this.consecutiveErrors = 0;
+    });
+
+    this.client.on('error', (error: unknown) => {
+      this.consecutiveErrors += 1;
+      const { level, reason } = classifyRedisError(error, {
+        hasConnected: this.hasConnected,
+        consecutiveErrors: this.consecutiveErrors,
+      });
+
+      const message =
+        `Redis error [${reason}] after ${this.consecutiveErrors} consecutive ` +
+        `failure(s): ${error instanceof Error ? error.message : String(error)}`;
+
+      // The stack is only useful on the ones worth acting on.
+      if (level === 'error') {
+        this.logger.error(message, error instanceof Error ? error.stack : undefined);
+      } else if (level === 'warn') {
+        this.logger.warn(message);
+      } else {
+        this.logger.debug(message);
+      }
     });
   }
 
