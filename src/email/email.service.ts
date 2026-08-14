@@ -79,6 +79,48 @@ export class EmailService {
     });
   }
 
+  // Renewal warning. Deliberately worded as "renew" rather than "you will
+  // be charged": every renewal is a fresh purchase the buyer approves, not
+  // an automatic charge, because neither of the local payment services
+  // supports stored credentials or recurring mandates.
+  async sendSubscriptionExpiringEmail(input: {
+    to: string;
+    recipientName: string;
+    planCode: string;
+    daysLeft: number;
+    expiresAt: Date;
+    renewUrl: string;
+  }): Promise<void> {
+    const { to, recipientName, planCode, daysLeft, expiresAt, renewUrl } = input;
+    const when = daysLeft === 1 ? 'tomorrow' : `in ${daysLeft} days`;
+
+    await this.send({
+      to,
+      subject: `Your Fann ${planCode} plan ends ${when}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
+          <h2 style="color:#3C3489;">Your ${planCode} plan ends ${when}</h2>
+          <p>Hi ${recipientName},</p>
+          <p>
+            Your Fann ${planCode} subscription ends on
+            <strong>${new Date(expiresAt).toDateString()}</strong>. After that you'll
+            still be able to browse, but artist contact details and messaging will be locked.
+          </p>
+          <p>
+            <a href="${renewUrl}"
+               style="display:inline-block;padding:12px 24px;background:#3C3489;color:#fff;
+                      text-decoration:none;border-radius:6px;font-weight:bold;">
+              Renew now
+            </a>
+          </p>
+          <p style="font-size:13px;color:#666;">
+            Nothing is charged automatically — renewing is a new purchase you confirm yourself.
+          </p>
+        </div>
+      `,
+    });
+  }
+
   async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
     await this.send({
       to,

@@ -6,6 +6,7 @@ import {
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { VerificationService } from '../verification/verification.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
 import { aggregateValue } from '../common/db.util';
@@ -51,6 +52,7 @@ export class AdminService {
   constructor(
     @InjectConnection() private readonly db: Knex,
     private readonly verificationService: VerificationService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   // ================================================================
@@ -317,6 +319,13 @@ export class AdminService {
         'p.id',
         'p.planner_id',
         'p.amount_usd',
+        // What the admin is actually confirming. Without these the panel
+        // shows a dollar amount with no indication of what it buys, and a
+        // pack of ten day passes looks identical to a single year.
+        'p.plan_code',
+        'p.quantity',
+        'p.currency',
+        'p.provider',
         'p.transfer_service',
         'p.reference_code',
         'p.period_start',
@@ -351,11 +360,25 @@ export class AdminService {
       throw new BadRequestException('A rejection reason is required.');
     }
 
-    await this.db('payments').where({ id: paymentId }).update({
-      status:           dto.decision,
-      rejection_reason: dto.rejectionReason ?? null,
-      confirmed_by:     dto.decision === 'confirmed' ? adminId : null,
-      confirmed_at:     dto.decision === 'confirmed' ? this.db.fn.now() : null,
+    // The status change and the minting share a transaction on purpose. If
+    // minting failed on its own the payment would sit marked 'confirmed'
+    // with nothing granted — money taken, no access, and no signal that
+    // anything went wrong. Either both land or neither does.
+    let minted = 0;
+    await this.db.transaction(async (trx) => {
+      await trx('payments').where({ id: paymentId }).update({
+        status:           dto.decision,
+        rejection_reason: dto.rejectionReason ?? null,
+        confirmed_by:     dto.decision === 'confirmed' ? adminId : null,
+        confirmed_at:     dto.decision === 'confirmed' ? this.db.fn.now() : null,
+      });
+
+      if (dto.decision === 'confirmed') {
+        // Same method the payment webhook calls in Wave 7. One
+        // implementation of the stacking rules, two callers.
+        const result = await this.subscriptionsService.mintForPayment(paymentId, trx);
+        minted = result.minted;
+      }
     });
 
     const auditAction =
@@ -365,6 +388,8 @@ export class AdminService {
       payment_id:       paymentId,
       transfer_service: payment.transfer_service,
       reference:        payment.reference_code,
+      ...(payment.plan_code && { plan_code: payment.plan_code, quantity: payment.quantity }),
+      ...(minted > 0 && { subscriptions_minted: minted }),
       ...(dto.rejectionReason && { rejection_reason: dto.rejectionReason }),
     });
 
@@ -375,10 +400,12 @@ export class AdminService {
     const typeMap = { confirmed: 'payment_confirmed', rejected: 'payment_rejected' } as const;
     await this.notify(payment.planner_id, typeMap[dto.decision], titleMap[dto.decision], {
       payment_id: paymentId,
+      ...(payment.plan_code && { plan_code: payment.plan_code, quantity: payment.quantity }),
+      ...(minted > 0 && { subscriptions_minted: minted }),
       ...(dto.rejectionReason && { rejection_reason: dto.rejectionReason }),
     });
 
-    return { message: `Payment ${dto.decision}.` };
+    return { message: `Payment ${dto.decision}.`, minted };
   }
 
   // ================================================================
