@@ -12,6 +12,81 @@ import {
   SubscriptionsService,
 } from '../subscriptions/subscriptions.service';
 
+export interface MaintenanceNotification {
+  userId: string;
+  type: string;
+  title: string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * Works out what to tell people after an expiry-and-promotion sweep.
+ *
+ * When a queued plan is promoted in the same run that ended the previous
+ * one, nothing was interrupted — so saying "your subscription ended" and
+ * then "your next plan has started" describes a break in service that did
+ * not happen, and reads as alarming for what is really a seamless
+ * rollover. Those two collapse into a single message.
+ *
+ * A promotion with no matching expiry still gets its own notification:
+ * that is the recovery case, where an earlier run failed to promote and
+ * this one caught up, and the user genuinely did lose access in between.
+ *
+ * Pure on purpose — this is the part worth testing, and it needs no
+ * database to do it.
+ */
+export function buildMaintenanceNotifications(
+  expired: { id: string; user_id: string; plan_code: string }[],
+  promoted: { id: string; user_id: string; plan_code: string; expires_at: Date }[],
+): MaintenanceNotification[] {
+  // At most one active subscription per user, so at most one expiry each.
+  const pendingPromotions = new Map(promoted.map((p) => [p.user_id, p]));
+  const notifications: MaintenanceNotification[] = [];
+
+  for (const ended of expired) {
+    const next = pendingPromotions.get(ended.user_id);
+
+    if (!next) {
+      notifications.push({
+        userId: ended.user_id,
+        type: 'subscription_expired',
+        title: 'Your subscription ended',
+        data: { subscription_id: ended.id, plan_code: ended.plan_code },
+      });
+      continue;
+    }
+
+    pendingPromotions.delete(ended.user_id);
+    notifications.push({
+      userId: ended.user_id,
+      type: 'subscription_rolled_over',
+      title: `Your ${ended.plan_code} plan ended and your ${next.plan_code} plan started`,
+      data: {
+        subscription_id: next.id,
+        plan_code: next.plan_code,
+        expires_at: next.expires_at,
+        previous_subscription_id: ended.id,
+        previous_plan_code: ended.plan_code,
+      },
+    });
+  }
+
+  for (const next of pendingPromotions.values()) {
+    notifications.push({
+      userId: next.user_id,
+      type: 'subscription_started',
+      title: 'Your next plan has started',
+      data: {
+        subscription_id: next.id,
+        plan_code: next.plan_code,
+        expires_at: next.expires_at,
+      },
+    });
+  }
+
+  return notifications;
+}
+
 @Injectable()
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
@@ -63,19 +138,13 @@ export class SchedulerService {
         this.logger.log(`[Scheduler] Promoted ${promoted.length} queued subscription(s)`);
       }
 
-      for (const sub of expired) {
-        await this.notifySubscription(sub.user_id, 'subscription_expired', 'Your subscription ended', {
-          subscription_id: sub.id,
-          plan_code: sub.plan_code,
-        });
-      }
-
-      for (const sub of promoted) {
-        await this.notifySubscription(sub.user_id, 'subscription_started', 'Your next plan has started', {
-          subscription_id: sub.id,
-          plan_code: sub.plan_code,
-          expires_at: sub.expires_at,
-        });
+      for (const notification of buildMaintenanceNotifications(expired, promoted)) {
+        await this.notifySubscription(
+          notification.userId,
+          notification.type,
+          notification.title,
+          notification.data,
+        );
       }
     } catch (err) {
       this.logger.error('[Scheduler] Subscription maintenance failed', err);
