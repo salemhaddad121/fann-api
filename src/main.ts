@@ -11,7 +11,18 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody keeps an untouched Buffer copy of every request body alongside
+  // the parsed one, reachable as req.rawBody.
+  //
+  // Payment providers sign their webhooks with an HMAC over the exact bytes
+  // they sent. Re-serialising the parsed JSON does not reproduce those bytes
+  // — key order, whitespace and number formatting are all free to change —
+  // so once the raw body is discarded the signature can never be verified
+  // again. There is no way to add this later without touching bootstrap
+  // after cookies, CORS and helmet are all live, and you would only find out
+  // it was missing when pointing a real provider at the endpoint for the
+  // first time.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.setGlobalPrefix('api/v1');
 
