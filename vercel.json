@@ -12,6 +12,14 @@
     {
       "path": "/api/v1/cron/telemetry-prune",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/v1/cron/subscription-maintenance",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/v1/cron/renewal-reminders",
+      "schedule": "0 8 * * *"
     }
   ]
 }

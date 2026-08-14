@@ -107,4 +107,32 @@ export class CronController {
     this.assertAuthorised(authorization);
     await this.scheduler.runTelemetryPrune();
   }
+
+  // Hourly under SCHEDULER_MODE=http — see vercel.json. Expiry and
+  // promotion are the only jobs here that are not daily.
+  @Get('subscription-maintenance')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async subscriptionMaintenanceGet(@Headers('authorization') authorization?: string) {
+    return this.subscriptionMaintenance(authorization);
+  }
+
+  @Post('subscription-maintenance')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async subscriptionMaintenance(@Headers('authorization') authorization?: string) {
+    this.assertAuthorised(authorization);
+    await this.scheduler.runSubscriptionMaintenance();
+  }
+
+  @Get('renewal-reminders')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async renewalRemindersGet(@Headers('authorization') authorization?: string) {
+    return this.renewalReminders(authorization);
+  }
+
+  @Post('renewal-reminders')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async renewalReminders(@Headers('authorization') authorization?: string) {
+    this.assertAuthorised(authorization);
+    await this.scheduler.runRenewalReminders();
+  }
 }

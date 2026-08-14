@@ -5,6 +5,7 @@ import { CronController } from './cron.controller';
 import { BookingsModule } from '../bookings/bookings.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { AnalyticsModule } from '../analytics/analytics.module';
     BookingsModule,
     ReviewsModule,
     AnalyticsModule,
+    SubscriptionsModule,
   ],
   controllers: [CronController],
   providers: [SchedulerService],
