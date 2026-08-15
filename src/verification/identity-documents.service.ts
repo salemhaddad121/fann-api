@@ -76,7 +76,27 @@ export class IdentityDocumentsService {
     @InjectConnection() private readonly db: Knex,
     private readonly configService: ConfigService,
   ) {
-    this.bucket = requireConfig(configService, 'S3_BUCKET');
+    // Identity documents belong in a bucket of their own.
+    //
+    // Not a tidiness preference — it is what makes the isolation in this
+    // file's header actually hold. Public media is served from an R2 custom
+    // domain (CDN_BASE_URL), and an R2 custom domain grants public read to
+    // the WHOLE bucket; there is no way to scope it to a prefix. So while
+    // ID scans share a bucket with profile photos, binding cdn.fann.guru
+    // publishes every one of them at
+    // `https://cdn.fann.guru/identity/<user>/<file>` — undoing from the
+    // outside every precaution this service takes on the inside.
+    //
+    // Falls back to S3_BUCKET when unset, which is deliberate: it makes
+    // deploying this change a no-op. The cutover is set the variable, copy
+    // the objects, delete the originals — in that order, with the code
+    // already live either way. Flipping the bucket at deploy time instead
+    // would strand every existing document the moment the new code booted,
+    // and an admin opening a pending review would get a 404 with no clue
+    // why. See docs/cloudflare-console-steps.md.
+    this.bucket =
+      configService.get<string>('S3_IDENTITY_BUCKET') ||
+      requireConfig(configService, 'S3_BUCKET');
 
     const endpoint = configService.get<string>('S3_ENDPOINT');
     this.s3 = new S3Client({
