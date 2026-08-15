@@ -24,13 +24,14 @@ function fullRow() {
   };
 }
 
-/** Everything a subscription is supposed to be buying. */
-const PAYWALLED_FIELDS = [
-  'base_price_usd',
-  'social_links',
-  'deposit_usd',
-  'cancellation_policy',
-];
+/**
+ * Everything a subscription is supposed to be buying.
+ *
+ * Booking terms are deliberately absent: a deposit and a cancellation
+ * policy are what a booker needs to judge whether an artist is worth
+ * pursuing, and neither can be used to book around the platform.
+ */
+const PAYWALLED_FIELDS = ['base_price_usd', 'social_links'];
 
 function dbWithSubscription(subscription: unknown) {
   const chain = createMockQueryBuilder();
@@ -45,14 +46,23 @@ describe('profileColumnsFor()', () => {
     const columns = profileColumnsFor('guest');
 
     expect(columns).not.toContain('ap.social_links');
-    expect(columns).not.toContain('ap.deposit_usd');
-    expect(columns).not.toContain('ap.cancellation_policy');
   });
 
   it('selects them for a subscriber', () => {
     const columns = profileColumnsFor('subscribed');
 
-    expect(columns).toEqual(expect.arrayContaining(['ap.social_links', 'ap.deposit_usd']));
+    expect(columns).toContain('ap.social_links');
+  });
+
+  it('gives booking terms to every tier', () => {
+    // A deposit and a cancellation policy are what a booker needs to
+    // decide whether an artist is worth pursuing at all, and neither can
+    // be used to book around the platform the way a name or a number can.
+    for (const tier of ['guest', 'registered', 'subscribed'] as const) {
+      expect(profileColumnsFor(tier)).toEqual(
+        expect.arrayContaining(['ap.deposit_usd', 'ap.cancellation_policy']),
+      );
+    }
   });
 
   it('still reads the two columns it has to transform', () => {
@@ -122,6 +132,16 @@ describe('shapeArtistProfile()', () => {
     expect(shaped.review_count).toBe(12);
     expect(shaped.bio).toBe('Wedding DJ');
   });
+
+  it.each(['guest', 'registered'] as const)(
+    'shows booking terms to a %s viewer',
+    (tier) => {
+      const shaped = shapeArtistProfile(fullRow(), tier);
+
+      expect(shaped.deposit_usd).toBe('100.00');
+      expect(shaped.cancellation_policy).toBe('48 hours notice');
+    },
+  );
 });
 
 describe('priceBand()', () => {

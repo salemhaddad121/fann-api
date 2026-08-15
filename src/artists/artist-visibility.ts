@@ -40,6 +40,14 @@ const PUBLIC_COLUMNS = [
   'ap.avg_rating',
   'ap.review_count',
   'ap.created_at',
+  // Booking terms are public. They were subscriber-only in the original
+  // plan; Salem overruled that, and he is right — a deposit and a
+  // cancellation policy are what a booker needs to decide whether an
+  // artist is worth pursuing at all, and they cannot be used to book
+  // around the platform the way a name or a phone number can. Withholding
+  // them protected nothing and made every profile less useful.
+  'ap.deposit_usd',
+  'ap.cancellation_policy',
 ];
 
 /**
@@ -59,11 +67,7 @@ const DERIVED_SOURCE_COLUMNS = ['ap.display_name', 'ap.base_price_usd'];
  * anonymous callers, and would have shipped every column added later too. A
  * new column now stays private until someone deliberately adds it here.
  */
-const SUBSCRIBER_ONLY_COLUMNS = [
-  'ap.social_links',
-  'ap.deposit_usd',
-  'ap.cancellation_policy',
-];
+const SUBSCRIBER_ONLY_COLUMNS = ['ap.social_links'];
 
 export function profileColumnsFor(tier: ViewerTier): string[] {
   const columns = [...PUBLIC_COLUMNS, ...DERIVED_SOURCE_COLUMNS];
@@ -145,8 +149,9 @@ export function shapeArtistProfile<T extends Record<string, unknown>>(
 
   delete shaped.base_price_usd;
   delete shaped.social_links;
-  delete shaped.deposit_usd;
-  delete shaped.cancellation_policy;
+  // deposit_usd and cancellation_policy are deliberately NOT stripped —
+  // see PUBLIC_COLUMNS. They are decision-making information, not contact
+  // details.
 
   return shaped;
 }
