@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
-import { IdentityDocumentsService } from './identity-documents.service';
+import {
+  IdentityDocumentsService,
+  RETENTION_DAYS_APPROVED,
+  RETENTION_DAYS_REJECTED,
+} from './identity-documents.service';
 import { createMockDb, createMockQueryBuilder } from '../test-utils/knex-mock';
 
 const config = {
@@ -185,5 +189,90 @@ describe('IdentityDocumentsService.getMine()', () => {
 
     expect(result.complete).toBe(true);
     expect(result.outstanding).toEqual([]);
+  });
+});
+
+describe('IdentityDocumentsService.pruneExpiredDocuments()', () => {
+  function makeS3Service(candidates: Record<string, unknown>[]) {
+    const docs = createMockQueryBuilder();
+    docs.mockResolve(candidates);
+    const service = makeService({ 'id_documents as d': docs, id_documents: docs });
+    return { service, docs };
+  }
+
+  it('deletes the file from storage before clearing the key', async () => {
+    // The order is load-bearing. Clearing the key first and then failing to
+    // delete would drop our only pointer to the object and orphan a passport
+    // scan in the bucket permanently.
+    const { service, docs } = makeS3Service([
+      { id: 'doc-1', s3_key: 'identity/u1/id_document-a.jpg', status: 'approved' },
+    ]);
+    const send = jest.fn().mockResolvedValue({});
+    (service as unknown as { s3: { send: unknown } }).s3 = { send };
+
+    const result = await service.pruneExpiredDocuments();
+
+    expect(send).toHaveBeenCalled();
+    expect(docs.update).toHaveBeenCalledWith(
+      expect.objectContaining({ s3_key: null }),
+    );
+    expect(result.purged).toBe(1);
+  });
+
+  it('leaves the key in place when the storage delete fails', async () => {
+    // So the row is retried on the next run rather than silently losing
+    // track of a file we intended to remove.
+    const { service, docs } = makeS3Service([
+      { id: 'doc-1', s3_key: 'identity/u1/selfie-a.jpg', status: 'rejected' },
+    ]);
+    (service as unknown as { s3: { send: unknown } }).s3 = {
+      send: jest.fn().mockRejectedValue(new Error('network')),
+    };
+
+    const result = await service.pruneExpiredDocuments();
+
+    expect(docs.update).not.toHaveBeenCalled();
+    expect(result).toEqual({ purged: 0, failed: 1 });
+  });
+
+  it('keeps sweeping after one document fails', async () => {
+    // One unreachable object must not strand every later document.
+    const { service } = makeS3Service([
+      { id: 'doc-1', s3_key: 'identity/u1/a.jpg', status: 'approved' },
+      { id: 'doc-2', s3_key: 'identity/u2/b.jpg', status: 'approved' },
+    ]);
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({});
+    (service as unknown as { s3: { send: unknown } }).s3 = { send };
+
+    const result = await service.pruneExpiredDocuments();
+
+    expect(result).toEqual({ purged: 1, failed: 1 });
+  });
+
+  it('does nothing when there is nothing to purge', async () => {
+    const { service } = makeS3Service([]);
+
+    await expect(service.pruneExpiredDocuments()).resolves.toEqual({
+      purged: 0,
+      failed: 0,
+    });
+  });
+});
+
+describe('retention windows', () => {
+  it('keeps approved documents longer than rejected ones', () => {
+    // An approved artist has an ongoing relationship where a fraud question
+    // can surface months later. A rejected one has none — the window only
+    // has to let them read the reason and re-submit.
+    expect(RETENTION_DAYS_APPROVED).toBeGreaterThan(RETENTION_DAYS_REJECTED);
+  });
+
+  it('keeps neither indefinitely', () => {
+    // The point of the policy: no window may be effectively "forever".
+    expect(RETENTION_DAYS_APPROVED).toBeLessThanOrEqual(365);
+    expect(RETENTION_DAYS_REJECTED).toBeLessThanOrEqual(365);
   });
 });

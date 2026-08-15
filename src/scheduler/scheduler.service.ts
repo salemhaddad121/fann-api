@@ -12,6 +12,7 @@ import {
   SubscriptionsService,
 } from '../subscriptions/subscriptions.service';
 import { PaymentProviderRegistry } from '../payments/payment-provider.registry';
+import { IdentityDocumentsService } from '../verification/identity-documents.service';
 
 export interface MaintenanceNotification {
   userId: string;
@@ -111,6 +112,7 @@ export class SchedulerService {
     private readonly analyticsService: AnalyticsService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly providerRegistry: PaymentProviderRegistry,
+    private readonly identityDocuments: IdentityDocumentsService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -294,6 +296,42 @@ export class SchedulerService {
       }
     } catch (err) {
       this.logger.error('[Scheduler] Payment reconciliation failed', err);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Daily at 03:00 UTC — delete identity files past their retention window.
+  //
+  // Separate from the telemetry prune despite doing a similar job, because
+  // the stakes are not comparable: that one drops browsing history, this
+  // one deletes government ID. Keeping them apart means a failure in one is
+  // visible on its own rather than buried in a shared log line.
+  //
+  // Early, and after the other jobs, because it talks to object storage
+  // rather than just the database — it is the slowest and the most likely
+  // to be rate-limited, and nothing else waits on it.
+  // ----------------------------------------------------------------
+  @Cron('0 3 * * *', { timeZone: 'UTC' })
+  async handleIdentityDocumentRetention() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runIdentityDocumentRetention();
+  }
+
+  async runIdentityDocumentRetention() {
+    try {
+      const { purged, failed } = await this.identityDocuments.pruneExpiredDocuments();
+
+      if (failed > 0) {
+        // Worth surfacing loudly. A file we intended to delete and could
+        // not is exactly the thing that quietly persists for years.
+        this.logger.error(
+          `[Scheduler] Identity retention: ${failed} document(s) could not be purged`,
+        );
+      } else if (purged > 0) {
+        this.logger.log(`[Scheduler] Identity retention: purged ${purged} document(s)`);
+      }
+    } catch (err) {
+      this.logger.error('[Scheduler] Identity document retention failed', err);
     }
   }
 

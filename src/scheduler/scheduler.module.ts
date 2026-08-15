@@ -7,6 +7,7 @@ import { ReviewsModule } from '../reviews/reviews.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { PaymentProvidersModule } from '../payments/payment-providers.module';
+import { VerificationModule } from '../verification/verification.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PaymentProvidersModule } from '../payments/payment-providers.module';
     AnalyticsModule,
     SubscriptionsModule,
     PaymentProvidersModule,
+    VerificationModule,
   ],
   controllers: [CronController],
   providers: [SchedulerService],

@@ -24,6 +24,10 @@
     {
       "path": "/api/v1/cron/payment-reconciliation",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/v1/cron/identity-retention",
+      "schedule": "0 3 * * *"
     }
   ]
 }
