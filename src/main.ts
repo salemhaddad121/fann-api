@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { RequestMethod } from '@nestjs/common';
 // import-equals, not `import * as`, deliberately. cookie-parser is a
 // CommonJS module whose export is the function itself. Under
 // esModuleInterop:false `import * as` yields that function and is callable;
@@ -24,7 +25,13 @@ async function bootstrap() {
   // first time.
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
-  app.setGlobalPrefix('api/v1');
+  // Payment webhooks sit outside the version prefix. A provider's callback
+  // URL is registered once in their dashboard, and bumping to api/v2 would
+  // silently stop confirming payments for money that had already left
+  // customers' accounts.
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: 'webhooks/payments/:provider', method: RequestMethod.POST }],
+  });
 
   // Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, …)
   // applied to every response.

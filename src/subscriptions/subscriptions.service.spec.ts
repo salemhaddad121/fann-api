@@ -6,6 +6,19 @@ import {
 import { SubscriptionsService } from './subscriptions.service';
 import { createMockDb, createMockQueryBuilder } from '../test-utils/knex-mock';
 
+// Intent creation asks the registry which provider is active. These tests
+// are about the subscription rules, so it is stubbed to the manual
+// provider — the one that issues instructions and no redirect.
+const registryStub = {
+  active: () => ({
+    code: 'manual',
+    createIntent: async ({ paymentId }: { paymentId: string }) => ({
+      providerRef: paymentId,
+      instructions: 'Transfer the amount and quote your code.',
+    }),
+  }),
+} as any;
+
 // getActiveSubscription() joins, so it addresses the table by its alias.
 const ACTIVE_LOOKUP = 'subscriptions as s';
 
@@ -38,7 +51,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
     subs.returning.mockResolvedValueOnce([{ id: 's1' }, { id: 's2' }, { id: 's3' }]);
 
     const db = createMockDb({ payments, subscription_plans: plans, subscriptions: subs });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     const result = await service.mintForPayment('pay-1');
 
@@ -68,7 +81,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
       subscriptions: subs,
       [ACTIVE_LOOKUP]: chain,
     });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await service.mintForPayment('pay-1');
 
@@ -102,7 +115,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
       subscriptions: subs,
       [ACTIVE_LOOKUP]: chain,
     });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await service.mintForPayment('pay-1');
 
@@ -122,7 +135,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
     subs.mockResolve([{ id: 'already-minted' }]);
 
     const db = createMockDb({ payments, subscriptions: subs });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     const result = await service.mintForPayment('pay-1');
 
@@ -136,7 +149,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
     const payments = createMockQueryBuilder();
     payments.first.mockResolvedValueOnce(makePayment({ plan_code: null }));
     const db = createMockDb({ payments });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(service.mintForPayment('pay-1')).resolves.toEqual({
       minted: 0,
@@ -156,7 +169,7 @@ describe('SubscriptionsService.activate()', () => {
     chain.first.mockResolvedValueOnce({ id: 'active-1', plan_code: 'month' });
 
     const db = createMockDb({ subscriptions: subs, [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(service.activate('user-1', 'credit-1')).rejects.toBeInstanceOf(ConflictException);
     expect(subs.update).not.toHaveBeenCalled();
@@ -166,7 +179,7 @@ describe('SubscriptionsService.activate()', () => {
     const subs = createMockQueryBuilder();
     subs.first.mockResolvedValueOnce({ id: 'c1', user_id: 'user-1', status: 'expired', plan_code: 'day' });
     const db = createMockDb({ subscriptions: subs });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(service.activate('user-1', 'c1')).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -175,7 +188,7 @@ describe('SubscriptionsService.activate()', () => {
     const subs = createMockQueryBuilder();
     subs.first.mockResolvedValueOnce(undefined);
     const db = createMockDb({ subscriptions: subs });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(service.activate('user-1', 'c1')).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -192,7 +205,7 @@ describe('SubscriptionsService.activate()', () => {
     chain.first.mockResolvedValueOnce(undefined); // nothing running
 
     const db = createMockDb({ subscriptions: subs, subscription_plans: plans, [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     const result = await service.activate('user-1', 'c1');
 
@@ -214,7 +227,7 @@ describe('SubscriptionsService.activate()', () => {
     chain.first.mockResolvedValueOnce(undefined);
 
     const db = createMockDb({ subscriptions: subs, subscription_plans: plans, [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(service.activate('user-1', 'c1')).rejects.toBeInstanceOf(ConflictException);
   });
@@ -233,7 +246,7 @@ describe('SubscriptionsService.createPaymentIntent()', () => {
     users.first.mockResolvedValueOnce({ account_code: 'PLN-000042' });
 
     const db = createMockDb({ subscription_plans: plans, payments, users });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     const result = await service.createPaymentIntent('user-1', {
       planCode: 'month',
@@ -260,7 +273,7 @@ describe('SubscriptionsService.createPaymentIntent()', () => {
     users.first.mockResolvedValueOnce({ account_code: 'PLN-1' });
 
     const db = createMockDb({ subscription_plans: plans, payments, users });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await service.createPaymentIntent('user-1', { planCode: 'day' } as any);
 
@@ -273,7 +286,7 @@ describe('SubscriptionsService.createPaymentIntent()', () => {
     const plans = createMockQueryBuilder();
     plans.first.mockResolvedValueOnce(undefined);
     const db = createMockDb({ subscription_plans: plans });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(
       service.createPaymentIntent('user-1', { planCode: 'year' } as any),
@@ -289,7 +302,7 @@ describe('SubscriptionsService.findDueRenewalReminders()', () => {
       { id: 's1', user_id: 'u1', plan_code: 'day', expires_at: new Date(Date.now() + 3_600_000) },
     ]);
     const db = createMockDb({ [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(service.findDueRenewalReminders()).resolves.toEqual([]);
   });
@@ -302,7 +315,7 @@ describe('SubscriptionsService.findDueRenewalReminders()', () => {
     notifications.mockResolve([{ data: { subscription_id: 's1', days: 7 } }]);
 
     const db = createMockDb({ [ACTIVE_LOOKUP]: chain, notifications });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     await expect(service.findDueRenewalReminders()).resolves.toEqual([]);
   });
@@ -315,7 +328,7 @@ describe('SubscriptionsService.findDueRenewalReminders()', () => {
     notifications.mockResolve([]);
 
     const db = createMockDb({ [ACTIVE_LOOKUP]: chain, notifications });
-    const service = new SubscriptionsService(db);
+    const service = new SubscriptionsService(db, registryStub);
 
     const due = await service.findDueRenewalReminders();
 

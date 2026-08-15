@@ -135,4 +135,17 @@ export class CronController {
     this.assertAuthorised(authorization);
     await this.scheduler.runRenewalReminders();
   }
+// Every 15 minutes under SCHEDULER_MODE=http.
+  @Get('payment-reconciliation')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async paymentReconciliationGet(@Headers('authorization') authorization?: string) {
+    return this.paymentReconciliation(authorization);
+  }
+
+  @Post('payment-reconciliation')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async paymentReconciliation(@Headers('authorization') authorization?: string) {
+    this.assertAuthorised(authorization);
+    await this.scheduler.runPaymentReconciliation();
+  }
 }

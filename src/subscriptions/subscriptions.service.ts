@@ -9,6 +9,7 @@ import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { getActiveSubscription, PlanCode } from '../common/subscription.util';
 import { CreatePaymentIntentDto, ReportTransferDto } from './dto/subscriptions.dto';
+import { PaymentProviderRegistry } from '../payments/payment-provider.registry';
 
 /**
  * Postgres NUMERIC arrives from node-postgres as a string, because a JS
@@ -44,7 +45,10 @@ export interface SubscriptionRow {
 export class SubscriptionsService {
   private readonly logger = new Logger(SubscriptionsService.name);
 
-  constructor(@InjectConnection() private readonly db: Knex) {}
+  constructor(
+    @InjectConnection() private readonly db: Knex,
+    private readonly providerRegistry: PaymentProviderRegistry,
+  ) {}
 
   // ================================================================
   // Reads
@@ -151,6 +155,13 @@ export class SubscriptionsService {
     // request would let the buyer name their own price.
     const amountUsd = toNumber(plan.price_usd) * quantity;
 
+    const provider = this.providerRegistry.active();
+    const user = await this.db('users').where({ id: userId }).select('account_code').first();
+
+    // The row is written first so the provider has a payment id to key
+    // against, then updated with whatever reference it issues. Doing it the
+    // other way round would mean a provider could issue a reference for a
+    // payment that failed to save.
     const [payment] = await this.db('payments')
       .insert({
         planner_id: userId,
@@ -158,28 +169,74 @@ export class SubscriptionsService {
         quantity,
         amount_usd: amountUsd,
         currency: 'USD',
-        provider: 'manual',
+        provider: provider.code,
         status: 'pending',
         transfer_service: dto.transferService ?? null,
         reference_code: dto.referenceCode ?? null,
       })
       .returning(['id', 'plan_code', 'quantity', 'amount_usd', 'currency', 'status', 'created_at']);
 
-    const user = await this.db('users').where({ id: userId }).select('account_code').first();
+    const intent = await provider.createIntent({
+      paymentId: payment.id,
+      amountUsd,
+      currency: 'USD',
+      userId,
+      accountCode: user?.account_code ?? '',
+      planCode: dto.planCode,
+      quantity,
+    });
+
+    // awaiting_provider, not pending: the buyer has been handed somewhere to
+    // pay and the ball is now in the provider's court. The manual flow ends
+    // here too — an admin confirming is what moves it on.
+    await this.db('payments')
+      .where({ id: payment.id })
+      .update({
+        provider_ref: intent.providerRef,
+        status: 'awaiting_provider',
+        intent_expires_at: intent.expiresAt ?? null,
+        updated_at: this.db.fn.now(),
+      });
 
     return {
       ...payment,
+      status: 'awaiting_provider',
       amount_usd: toNumber(payment.amount_usd),
-      // The reconciliation key the buyer must quote on the transfer. It is
-      // hidden from the profile UI but has to be prominent here.
+      provider: provider.code,
+      // Exactly one of these is set. The frontend branches on which:
+      // redirect if there is a URL, show the instruction screen if not.
+      redirect_url: intent.redirectUrl ?? null,
+      instructions: intent.instructions ?? null,
+      // The reconciliation key the buyer must quote on a transfer. Hidden
+      // from the profile UI but prominent here.
       account_code: user?.account_code ?? null,
     };
+  }
+
+  /**
+   * One payment, for the return page to poll after a redirect.
+   *
+   * Scoped to the owner: a payment id in someone else's hands must not
+   * reveal what they bought or what it cost.
+   */
+  async getMyPayment(userId: string, paymentId: string) {
+    const payment = await this.db('payments')
+      .where({ id: paymentId, planner_id: userId })
+      .select('id', 'plan_code', 'quantity', 'amount_usd', 'currency', 'status', 'provider', 'rejection_reason', 'created_at')
+      .first();
+
+    if (!payment) throw new NotFoundException('Payment not found.');
+    return { ...payment, amount_usd: toNumber(payment.amount_usd) };
   }
 
   /** Buyer reports the transfer reference after paying. */
   async reportTransfer(userId: string, paymentId: string, dto: ReportTransferDto) {
     const updated = await this.db('payments')
-      .where({ id: paymentId, planner_id: userId, status: 'pending' })
+      .where({ id: paymentId, planner_id: userId })
+      // Both states mean "not yet settled". Intents now land in
+      // awaiting_provider once the buyer has been handed somewhere to pay;
+      // filtering on pending alone would silently reject every report.
+      .whereIn('status', ['pending', 'awaiting_provider'])
       .update({
         transfer_service: dto.transferService,
         reference_code: dto.referenceCode,

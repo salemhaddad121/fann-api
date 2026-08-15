@@ -20,6 +20,10 @@
     {
       "path": "/api/v1/cron/renewal-reminders",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/v1/cron/payment-reconciliation",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

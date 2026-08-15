@@ -21,6 +21,7 @@ import { SavedModule }        from './saved/saved.module';
 import { AnalyticsModule }    from './analytics/analytics.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { SupportModule } from './support/support.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { SupportModule } from './support/support.module';
     AnalyticsModule,
     SubscriptionsModule,
     SupportModule,
+    PaymentsModule,
   ],
   providers: [
     // Global validation pipe — applies to every route automatically
