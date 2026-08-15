@@ -1,4 +1,8 @@
-import { AnalyticsService } from './analytics.service';
+import {
+  AnalyticsService,
+  PRUNE_BATCH_SIZE,
+  PRUNE_TIME_BUDGET_MS,
+} from './analytics.service';
 import { createMockDb, createMockQueryBuilder } from '../test-utils/knex-mock';
 
 const SESSION = '11111111-2222-3333-4444-555555555555';
@@ -123,5 +127,55 @@ describe('AnalyticsService.pruneOldEvents()', () => {
     await expect(service.pruneOldEvents()).resolves.toBe(7);
     expect(pageEvents.del).toHaveBeenCalled();
     expect(searchEvents.del).toHaveBeenCalled();
+  });
+
+  it('keeps going while batches come back full, and stops on a short one', async () => {
+    // A full batch means there is probably more behind it; a short batch is
+    // the only reliable signal that the cutoff has been reached.
+    const pageEvents = createMockQueryBuilder();
+    const searchEvents = createMockQueryBuilder();
+    pageEvents.del
+      .mockResolvedValueOnce(PRUNE_BATCH_SIZE)
+      .mockResolvedValueOnce(PRUNE_BATCH_SIZE)
+      .mockResolvedValueOnce(12);
+    searchEvents.del.mockResolvedValueOnce(0);
+
+    const service = new AnalyticsService(
+      createMockDb({ page_events: pageEvents, search_events: searchEvents }),
+    );
+
+    await expect(service.pruneOldEvents()).resolves.toBe(PRUNE_BATCH_SIZE * 2 + 12);
+    expect(pageEvents.del).toHaveBeenCalledTimes(3);
+    // Nothing expired here — one statement, then it leaves the table alone.
+    expect(searchEvents.del).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at the time budget instead of running until the function is killed', async () => {
+    // The whole point of batching: a run that cannot finish gives up
+    // cleanly and keeps what it deleted, rather than being cut off
+    // mid-statement and rolling the night's work back.
+    const pageEvents = createMockQueryBuilder();
+    const searchEvents = createMockQueryBuilder();
+    pageEvents.del.mockResolvedValue(PRUNE_BATCH_SIZE);
+    searchEvents.del.mockResolvedValue(PRUNE_BATCH_SIZE);
+
+    const nowSpy = jest
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(0) // deadline is set from this one
+      .mockReturnValue(PRUNE_TIME_BUDGET_MS + 1); // every check after it is late
+
+    try {
+      const service = new AnalyticsService(
+        createMockDb({ page_events: pageEvents, search_events: searchEvents }),
+      );
+
+      // One batch each: both tables still had rows, both gave up on the
+      // shared budget rather than looping.
+      await expect(service.pruneOldEvents()).resolves.toBe(PRUNE_BATCH_SIZE * 2);
+      expect(pageEvents.del).toHaveBeenCalledTimes(1);
+      expect(searchEvents.del).toHaveBeenCalledTimes(1);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

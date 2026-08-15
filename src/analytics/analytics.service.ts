@@ -12,6 +12,17 @@ const WINDOW_DAYS = 30;
 // pruning can never eat data a metric still needs.
 export const RETENTION_DAYS = 90;
 
+// Rows deleted per statement by the prune. Small enough that one statement
+// is short and takes few locks, large enough that a normal night's backlog
+// clears in a handful of round trips.
+export const PRUNE_BATCH_SIZE = 5_000;
+
+// Wall-clock budget for one prune run. The job runs on Vercel under
+// SCHEDULER_MODE=http, where a function that overruns is killed mid-flight,
+// so the run stops itself well before that rather than being cut off.
+// Whatever is left is simply pruned on the next run — see pruneTable().
+export const PRUNE_TIME_BUDGET_MS = 30_000;
+
 /**
  * Knex types an aggregate query by its aggregate keys alone and discards the
  * plainly selected columns, so `r.path` on a query that also counts is a
@@ -137,14 +148,71 @@ export class AnalyticsService {
   // now belong to guests who never agreed to anything beyond visiting the
   // site. Retention is the only control standing behind that data.
   async pruneOldEvents(retentionDays = RETENTION_DAYS): Promise<number> {
-    const cutoff = this.db.raw(`now() - interval '${retentionDays} days'`);
+    const deadline = Date.now() + PRUNE_TIME_BUDGET_MS;
 
-    const [pageEvents, searchEvents] = await Promise.all([
-      this.db('page_events').where('occurred_at', '<', cutoff).del(),
-      this.db('search_events').where('occurred_at', '<', cutoff).del(),
-    ]);
+    // Sequential, not Promise.all. The two tables share one time budget, and
+    // running them concurrently would have each measure its own progress
+    // against a clock the other is also spending.
+    const pageEvents = await this.pruneTable('page_events', retentionDays, deadline);
+    const searchEvents = await this.pruneTable('search_events', retentionDays, deadline);
 
     return pageEvents + searchEvents;
+  }
+
+  /**
+   * Deletes one table's expired rows in batches.
+   *
+   * The single unbounded `DELETE ... WHERE occurred_at < cutoff` this
+   * replaces was correct but could not last: both tables only grow, so the
+   * statement's cost grows with them, and it is the one job with no ceiling
+   * on how long it can run. Raising the function timeout would have bought
+   * time and not fixed anything.
+   *
+   * Batching changes the failure mode rather than just deferring it. Each
+   * batch is its own autocommitted statement, so a run that is cut off
+   * halfway keeps everything it already deleted and the next run resumes
+   * from there. The old version did all its work in one statement: killed at
+   * any point, it rolled back entirely and the backlog was strictly worse
+   * the following night.
+   *
+   * `LIMIT` cannot be applied to DELETE directly in Postgres, hence the
+   * subquery on the primary key.
+   */
+  private async pruneTable(
+    table: 'page_events' | 'search_events',
+    retentionDays: number,
+    deadline: number,
+  ): Promise<number> {
+    let total = 0;
+
+    for (;;) {
+      const expired = this.db(table)
+        .select('id')
+        .where(
+          'occurred_at',
+          '<',
+          this.db.raw(`now() - interval '${retentionDays} days'`),
+        )
+        .limit(PRUNE_BATCH_SIZE);
+
+      const deleted = Number(await this.db(table).whereIn('id', expired).del()) || 0;
+      total += deleted;
+
+      // A short batch means the cutoff has been reached — nothing left.
+      if (deleted < PRUNE_BATCH_SIZE) break;
+
+      if (Date.now() >= deadline) {
+        // Not an error. Reported so that a table needing repeated runs to
+        // catch up is visible rather than looking like a clean sweep.
+        this.logger.warn(
+          `[Retention] ${table}: stopped at ${total} row(s) after exhausting the ` +
+            `${PRUNE_TIME_BUDGET_MS}ms budget; the remainder prunes on the next run.`,
+        );
+        break;
+      }
+    }
+
+    return total;
   }
 
   async getEngagement() {
