@@ -519,9 +519,12 @@ What's actually open right now.
   but **not before the identity documents are moved out of `fann-media`.** Both public media
   (`uploads/`) and government ID scans (`identity/`) live in that one bucket, and an R2 custom
   domain grants public read to the whole bucket with no way to scope it to a prefix. Binding it
-  today would publish every artist's ID at a guessable-shaped URL and quietly undo the isolation
-  `identity-documents.service.ts` is built around. Steps and the fix in
-  `docs/cloudflare-console-steps.md`.
+  today would publish every artist's ID and quietly undo the isolation
+  `identity-documents.service.ts` is built around.
+
+  The code half is done: `S3_IDENTITY_BUCKET` exists and falls back to `S3_BUCKET`, so setting it
+  is a config change rather than a deploy. What remains is the bucket itself and the object copy —
+  ordered steps in `docs/cloudflare-console-steps.md`.
 - **`SUPPORT_INBOX_EMAIL` is unset.** Tickets are always saved; the notification currently falls
   back to `EMAIL_FROM` so it reaches a real inbox rather than vanishing.
 - **Payment provider credentials.** `src/payments/providers/README.md` lists exactly what Whish

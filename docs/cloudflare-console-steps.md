@@ -93,16 +93,29 @@ the outside, without touching a line of the code that enforces it.
 ### What to do instead
 
 **Split the buckets before binding anything.** Identity documents move to
-their own bucket that no custom domain is ever attached to:
+their own bucket that no custom domain is ever attached to.
 
-1. Create a second R2 bucket, `fann-identity`, with no public access and no
-   custom domain.
-2. Add `S3_IDENTITY_BUCKET=fann-identity` and have
-   `IdentityDocumentsService` read that instead of `S3_BUCKET`. It is one
-   constructor line — the service already keeps its own `bucket` field.
-3. Copy existing `identity/` objects across, then delete the originals from
-   `fann-media`. Stored keys are relative, so no database change is needed.
-4. Only then bind `cdn.fann.guru` to `fann-media`.
+**The code side is done.** `IdentityDocumentsService` reads
+`S3_IDENTITY_BUCKET` and falls back to `S3_BUCKET` when it is blank, so
+nothing has changed yet — the fallback is what makes the steps below safe to
+do in your own time rather than as a synchronised deploy.
+
+1. Create a second R2 bucket, `fann-identity`. No public access, no custom
+   domain, ever.
+2. Copy the existing `identity/` objects from `fann-media` into it. Keys
+   stay exactly as they are — only the bucket changes, and the database
+   stores the key, not the bucket, so there is nothing to migrate.
+3. Set `S3_IDENTITY_BUCKET=fann-identity` in Vercel → `fann-api` →
+   Environment Variables, and redeploy. Env changes do not reach a running
+   deployment.
+4. Check a pending ID document still opens in the admin panel. That proves
+   the new bucket is being read before anything is deleted.
+5. Only now delete the `identity/` objects from `fann-media`.
+6. Bind `cdn.fann.guru` to `fann-media`.
+
+Copy before switching, verify, then delete. Deleting first, or switching
+before copying, leaves admins looking at 404s on documents people are
+waiting to be reviewed on.
 
 This is the version that matches what the code already believes is true, and
 it keeps working if someone later deletes a firewall rule.
