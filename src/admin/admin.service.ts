@@ -314,7 +314,10 @@ export class AdminService {
     const query = this.db('payments as p')
       .join('users as u',          'u.id', 'p.planner_id')
       .leftJoin('planner_profiles as pp', 'pp.user_id', 'u.id')
-      .where('p.status', 'pending')
+      // Anything still awaiting a decision. Since intents moved to
+      // awaiting_provider, filtering on 'pending' alone would leave the
+      // queue permanently empty.
+      .whereIn('p.status', ['pending', 'awaiting_provider'])
       .select(
         'p.id',
         'p.planner_id',
@@ -353,7 +356,11 @@ export class AdminService {
   async reviewPayment(adminId: string, paymentId: string, dto: ReviewPaymentDto) {
     const payment = await this.db('payments').where({ id: paymentId }).first();
     if (!payment) throw new NotFoundException('Payment not found.');
-    if (payment.status !== 'pending') {
+    // Both states mean "awaiting a decision". awaiting_provider is where an
+    // intent sits once the buyer has been given somewhere to pay, which is
+    // now every manual payment — checking for 'pending' alone would make
+    // the confirm button reject everything.
+    if (payment.status !== 'pending' && payment.status !== 'awaiting_provider') {
       throw new BadRequestException(`Payment has already been ${payment.status}.`);
     }
     if (dto.decision === 'rejected' && !dto.rejectionReason) {

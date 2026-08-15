@@ -11,6 +11,7 @@ import {
   REMINDER_NOTIFICATION_TYPE,
   SubscriptionsService,
 } from '../subscriptions/subscriptions.service';
+import { PaymentProviderRegistry } from '../payments/payment-provider.registry';
 
 export interface MaintenanceNotification {
   userId: string;
@@ -109,6 +110,7 @@ export class SchedulerService {
     private readonly configService:   ConfigService,
     private readonly analyticsService: AnalyticsService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly providerRegistry: PaymentProviderRegistry,
   ) {}
 
   // ----------------------------------------------------------------
@@ -206,6 +208,92 @@ export class SchedulerService {
       this.logger.log(`[Scheduler] Sent ${due.length} renewal reminder(s)`);
     } catch (err) {
       this.logger.error('[Scheduler] Renewal reminders failed', err);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Every 15 minutes — reconcile payments left hanging with a provider.
+  //
+  // Two jobs in one pass:
+  //
+  //  * Poll providers that expose getStatus. This exists because a
+  //    reference-matching service may have no webhook at all — if that is
+  //    how OMT turns out to work, polling is the primary path and not a
+  //    fallback.
+  //  * Expire intents past intent_expires_at, so an abandoned checkout
+  //    stops sitting in the admin queue forever.
+  //
+  // Never touches manual payments: those are confirmed by a person, and an
+  // automated sweep expiring them would cancel transfers that are simply
+  // waiting on an admin.
+  // ----------------------------------------------------------------
+  @Cron('*/15 * * * *')
+  async handlePaymentReconciliation() {
+    if (!this.inProcessCronEnabled) return;
+    await this.runPaymentReconciliation();
+  }
+
+  async runPaymentReconciliation() {
+    try {
+      const expired = await this.db('payments')
+        .where('status', 'awaiting_provider')
+        .whereNot('provider', 'manual')
+        .whereNotNull('intent_expires_at')
+        .whereRaw('intent_expires_at < now()')
+        .update({ status: 'expired', updated_at: this.db.fn.now() })
+        .returning(['id']);
+
+      if (expired.length > 0) {
+        this.logger.log(`[Scheduler] Expired ${expired.length} stale payment intent(s)`);
+      }
+
+      // Only providers that actually implement polling. The rest are
+      // webhook-driven and there is nothing to ask them.
+      for (const provider of this.providerRegistry.pollable()) {
+        if (provider.code === 'manual') continue;
+
+        const stale = await this.db('payments')
+          .where('status', 'awaiting_provider')
+          .where('provider', provider.code)
+          .whereNotNull('provider_ref')
+          // 30 minutes, so this never races a webhook that is simply in
+          // flight. Polling a payment the provider is about to confirm
+          // anyway just doubles the work.
+          .whereRaw("created_at < now() - interval '30 minutes'")
+          .select('id', 'provider_ref');
+
+        for (const payment of stale) {
+          try {
+            const status = await provider.getStatus!(payment.provider_ref);
+            if (status === 'unknown') continue;
+
+            this.logger.log(
+              `[Scheduler] Provider ${provider.code} reports ${status} for payment ${payment.id}`,
+            );
+
+            // Deliberately does NOT confirm here. Minting runs through the
+            // webhook path so amount and currency are verified against the
+            // stored intent — a poll that only reports "paid" carries no
+            // amount to check, and granting on that alone would skip the
+            // guard against a misrouted or tampered payment.
+            if (status === 'failed' || status === 'expired') {
+              await this.db('payments')
+                .where({ id: payment.id })
+                .update({
+                  status: status === 'failed' ? 'rejected' : 'expired',
+                  updated_at: this.db.fn.now(),
+                });
+            }
+          } catch (err) {
+            this.logger.error(
+              `[Scheduler] Polling failed for payment ${payment.id}`,
+              err,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      this.logger.error('[Scheduler] Payment reconciliation failed', err);
     }
   }
 

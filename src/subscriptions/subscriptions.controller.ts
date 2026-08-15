@@ -65,6 +65,21 @@ export class SubscriptionsController {
     return this.subscriptionsService.listMyPayments(userId);
   }
 
+  // GET /payments/:id — polled by the return page after a redirect.
+  //
+  // Declared after /payments/me so "me" is not swallowed by :id. Nest
+  // matches in declaration order, and ParseUUIDPipe would reject it with a
+  // 400 rather than falling through.
+  @Get('payments/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('planner')
+  getPayment(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) paymentId: string,
+  ) {
+    return this.subscriptionsService.getMyPayment(userId, paymentId);
+  }
+
   // PATCH /payments/:id/transfer — report the transfer reference
   @Patch('payments/:id/transfer')
   @UseGuards(JwtAuthGuard, RolesGuard)

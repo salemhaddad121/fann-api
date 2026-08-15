@@ -6,6 +6,7 @@ import { BookingsModule } from '../bookings/bookings.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { PaymentProvidersModule } from '../payments/payment-providers.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     ReviewsModule,
     AnalyticsModule,
     SubscriptionsModule,
+    PaymentProvidersModule,
   ],
   controllers: [CronController],
   providers: [SchedulerService],
