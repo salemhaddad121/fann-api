@@ -104,6 +104,22 @@ export class MediaService {
   async confirm(userId: string, dto: ConfirmMediaDto) {
     this.validateFileSizeCap(dto.mediaType, dto.fileSizeBytes);
 
+    // The key comes from the client and is written straight into the row,
+    // so it is checked rather than trusted — the same guard
+    // IdentityDocumentsService.confirm() already applies to its own prefix.
+    //
+    // Without it the key is not merely guessable, it is published:
+    // cdn_url is `${CDN_BASE_URL}/${s3_key}`, so anyone who can see a photo
+    // on a public profile can read that photo's exact key straight back out
+    // of the URL. Confirming it creates a row they own pointing at someone
+    // else's object, which then passes the ownership check in remove() —
+    // and remove() deletes the object from the bucket. That is any
+    // logged-in user being able to delete any artist's photos, and to
+    // display them as their own in the meantime.
+    if (!dto.s3Key.startsWith(`uploads/${userId}/`)) {
+      throw new BadRequestException('That upload does not belong to you.');
+    }
+
     // Check user doesn't already have too many items (soft cap: 20)
     const countRow = await this.db('media')
       .where({ user_id: userId })
