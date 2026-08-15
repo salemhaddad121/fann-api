@@ -14,10 +14,14 @@ import {
   shapeArtistProfile,
   type ViewerContext,
 } from './artist-visibility';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Injectable()
 export class ArtistsService {
-  constructor(@InjectConnection() private readonly db: Knex) {}
+  constructor(
+    @InjectConnection() private readonly db: Knex,
+    private readonly analyticsService: AnalyticsService,
+  ) {}
 
   // ----------------------------------------------------------------
   // Search / list
@@ -124,6 +128,29 @@ export class ArtistsService {
       ...shapeArtistProfile(r, tier),
       categories: categoriesByArtist.get(r.id) ?? [],
     }));
+
+    // Recorded here rather than from the client so the numbers cannot be
+    // inflated — they exist to answer which categories to recruit for.
+    // Awaited but non-throwing: a telemetry failure must not 500 a search.
+    //
+    // Only the first requested category slug is resolved to an id. The
+    // filter takes a list, but a search across five categories is not
+    // demand for any one of them, and recording it five times would
+    // overstate every category involved.
+    await this.analyticsService.recordSearch({
+      userId: viewer.userId,
+      sessionId: viewer.sessionId,
+      categoryId: dto.categories?.length
+        ? (
+            await this.db('categories')
+              .whereIn('slug', dto.categories)
+              .select('id')
+              .first()
+          )?.id
+        : undefined,
+      queryText: dto.q,
+      resultCount: Number(total),
+    });
 
     return {
       data,

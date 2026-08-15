@@ -10,12 +10,15 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AdminService } from './admin.service';
 import { VerificationService } from '../verification/verification.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { AnalyticsExportService } from '../analytics/analytics-export.service';
 import {
   AuditLogDto,
   CreateCategoryDto,
@@ -43,6 +46,7 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly reviewsService: ReviewsService,
     private readonly analyticsService: AnalyticsService,
+    private readonly analyticsExportService: AnalyticsExportService,
     private readonly verificationService: VerificationService,
   ) {}
 
@@ -88,6 +92,60 @@ export class AdminController {
   @Get('analytics/engagement')
   getEngagement() {
     return this.analyticsService.getEngagement();
+  }
+
+  // GET /admin/analytics/sessions?from=&to=
+  // min / max / average / median session length, guest vs authenticated.
+  @Get('analytics/sessions')
+  getSessionDurations(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getSessionDurations(from, to);
+  }
+
+  // GET /admin/analytics/time-per-page?from=&to=
+  @Get('analytics/time-per-page')
+  getTimePerPage(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getTimePerPage(from, to);
+  }
+
+  // GET /admin/analytics/category-demand?from=&to=
+  // What people search for, ranked, with absolute counts.
+  @Get('analytics/category-demand')
+  getCategoryDemand(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getCategoryDemand(from, to);
+  }
+
+  // GET /admin/analytics/search-terms?from=&to=
+  @Get('analytics/search-terms')
+  getTopSearchTerms(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getTopSearchTerms(from, to);
+  }
+
+  // GET /admin/analytics/audience?from=&to=
+  @Get('analytics/audience')
+  getAudienceSplit(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analyticsService.getAudienceSplit(from, to);
+  }
+
+  // GET /admin/analytics/export?from=&to=
+  //
+  // Streams a real .xlsx, one sheet per metric. @Res({ passthrough: false })
+  // because the body is a binary Buffer, not JSON — returning it through
+  // Nest's normal serialisation would corrupt it.
+  @Get('analytics/export')
+  async exportAnalytics(
+    @Res() res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const buffer = await this.analyticsExportService.buildWorkbook(from, to);
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="fann-analytics-${stamp}.xlsx"`,
+      'Content-Length': String(buffer.length),
+    });
+    res.end(buffer);
   }
 
   // ----------------------------------------------------------------

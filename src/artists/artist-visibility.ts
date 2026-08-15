@@ -16,6 +16,15 @@ export type ViewerTier = 'guest' | 'registered' | 'subscribed';
 export interface ViewerContext {
   userId?: string;
   role?: string;
+  /**
+   * Client-generated session id, sent as the X-Session-Id header.
+   *
+   * A header rather than a query parameter on purpose: search URLs get
+   * copied and shared, and a session id embedded in one would follow the
+   * link into someone else's browser and merge two people's activity into
+   * a single session.
+   */
+  sessionId?: string;
 }
 
 /** Columns everyone sees, whatever their tier. */

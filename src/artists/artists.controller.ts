@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Put,
@@ -32,8 +33,16 @@ export class ArtistsController {
   // looks anonymous and everyone would get masked results.
   @Get('artists')
   @UseGuards(OptionalJwtAuthGuard)
-  search(@Query() dto: SearchArtistsDto, @CurrentUser() viewer?: UserRecord) {
-    return this.artistsService.search(dto, { userId: viewer?.id, role: viewer?.role });
+  search(
+    @Query() dto: SearchArtistsDto,
+    @CurrentUser() viewer?: UserRecord,
+    @Headers('x-session-id') sessionId?: string,
+  ) {
+    return this.artistsService.search(dto, {
+      userId: viewer?.id,
+      role: viewer?.role,
+      sessionId,
+    });
   }
 
   // GET /artists/me  — must come before /:id to avoid UUID parse on "me"
