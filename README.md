@@ -110,6 +110,78 @@ naming the missing variable (`src/common/config.util.ts`'s `requireConfig`), rat
 surfacing as a confusing error later.
 
 
+## Scheduled work: `SCHEDULER_MODE`
+
+Six jobs run on a schedule. They can be driven two different ways, and which one is correct
+depends entirely on **where the API is deployed** — not on preference.
+
+| Job | Schedule | What it does |
+|---|---|---|
+| `daily-review-trigger` | `0 6 * * *` | Marks played bookings completed, sends review requests |
+| `expired-review-unlock` | `30 6 * * *` | Unlocks reviews whose 7-day mutual-blind window lapsed |
+| `telemetry-prune` | `0 7 * * *` | Deletes `page_events` + `search_events` past 90 days |
+| `subscription-maintenance` | `0 * * * *` | Expires lapsed subscriptions, promotes queued ones |
+| `renewal-reminders` | `0 8 * * *` | Warns before a plan ends (year 30/7/1, month 3, day none) |
+| `payment-reconciliation` | `*/15 * * * *` | Polls hanging provider intents, expires stale ones |
+
+### The two modes
+
+`SCHEDULER_MODE=in-process` (the default) keeps the `@Cron` decorators in `SchedulerService`
+live. `SCHEDULER_MODE=http` disables them and instead exposes `/api/v1/cron/*`, which Vercel Cron
+calls on the schedules in `vercel.json`, authenticated with `CRON_SECRET` compared in constant
+time. The flag is what stops both triggers firing at once — every job has a `@Cron` wrapper that
+returns early in `http` mode, and a plain `runX()` method that both paths call.
+
+**`@Cron` needs a process that stays alive.** That is true in the Docker container and false on
+Vercel, where each request is a short-lived function — the decorators would simply never fire.
+So the mode is dictated by the host:
+
+- **API on Vercel** → `SCHEDULER_MODE=http`. There is no alternative; in-process crons silently
+  do nothing, which is the worst possible failure mode for scheduled work.
+- **API in a long-lived container** (Railway, Fly, Render, a VPS running this `Dockerfile`) →
+  `SCHEDULER_MODE=in-process`, and `vercel.json`'s `crons` block becomes dead weight.
+
+### Trade-offs, if the choice is ever open
+
+In-process is simpler: no shared secret, no HTTP round trip, any schedule you like down to the
+minute, and no execution time limit. Its weakness is horizontal scaling — **every instance runs
+its own crons**, so a second container means every job fires twice. Closing that needs an advisory
+lock or a leader election before scaling out. Nothing here does that yet, because nothing here
+runs more than one instance yet.
+
+Vercel Cron has the opposite shape: one endpoint called once, so duplication is impossible no
+matter how many instances Vercel spins up. It costs a `CRON_SECRET`, and every job becomes an
+HTTP request subject to the platform's function timeout. `telemetry-prune` is the one to watch —
+it is a single unbounded `DELETE` over two tables that only grows, and it is the first job that
+will exceed a timeout as traffic builds. If it starts failing, that is the signal to either batch
+the delete or move to in-process, not to raise the timeout.
+
+Cron frequency is also plan-gated on Vercel: Hobby is daily-only, which is why the hourly and
+15-minute entries were written at full frequency but did not actually run until the account moved
+to Pro. They are not degraded copies — the schedules in `vercel.json` are the intended ones.
+
+### Gotcha: Vercel Cron invokes with GET
+
+Every `/api/v1/cron/*` route answers **both** GET and POST for this reason. It was POST-only until
+2026-08-07, so every scheduled run since the project went live returned 404 and none of the work
+ran in production — visible in the runtime logs as `GET /api/v1/cron/telemetry-prune 404` in the
+`0 7 * * *` slot. Stacking `@Get` and `@Post` on one handler does **not** register both: the
+second decorator overwrites the first, so each job has a thin handler per verb delegating to one
+implementation. POST is kept so jobs can still be triggered by hand with curl.
+
+### Why two of these are not daily
+
+`subscription-maintenance` is hourly because a day pass activated at 14:20 lapses at 14:20, and a
+daily sweep would leave a queued plan waiting up to 23 hours before starting. Access itself is
+never wrong in between — `getActiveSubscription()` verifies `expires_at` rather than trusting
+`status`, so a lapsed row stops granting access the moment it lapses whether or not the job has
+run. What the job fixes is the bookkeeping and the promotion.
+
+`payment-reconciliation` runs every 15 minutes because it is the safety net for providers that
+have no webhook at all. If OMT turns out to be reference-matching, polling is the primary path
+rather than a fallback, and the interval is how quickly a paid customer gets what they bought.
+
+
 ## Audit pass: migration order, OAuth boot crash, dependency CVEs
 
 _(This section documents an external audit pass; the session notes below it predate it.)_
