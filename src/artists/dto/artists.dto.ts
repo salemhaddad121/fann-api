@@ -131,4 +131,17 @@ export class UpdateArtistProfileDto {
   @IsOptional()
   @IsObject()
   socialLinks?: Record<string, string>;
+
+  // Numeric, not free text: a deposit has to be comparable and summable,
+  // and "half up front" cannot be either. NULL and 0 both mean "none
+  // required" — the column allows either and the UI treats them the same.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  depositUsd?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  cancellationPolicy?: string;
 }
