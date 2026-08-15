@@ -12,6 +12,8 @@ import {
   profileColumnsFor,
   resolveViewerTier,
   shapeArtistProfile,
+  snapPriceCeiling,
+  snapPriceFloor,
   type ViewerContext,
 } from './artist-visibility';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -45,10 +47,28 @@ export class ArtistsService {
 
     // Filters
     if (dto.q) {
-      query = query.whereRaw(
-        `(ap.display_name ILIKE ? OR ap.bio ILIKE ?)`,
-        [`%${dto.q}%`, `%${dto.q}%`],
-      );
+      if (tier === 'subscribed') {
+        query = query.whereRaw(
+          `(ap.display_name ILIKE ? OR ap.bio ILIKE ?)`,
+          [`%${dto.q}%`, `%${dto.q}%`],
+        );
+      } else {
+        // Masking is only as strong as what cannot be probed around it. A
+        // substring match on the full name lets a viewer type "Nassar",
+        // see a hit, and confirm the surname the response deliberately
+        // shortened to "N." — one guess at a time, but a confirmed guess
+        // all the same.
+        //
+        // So below the paying tier the name is matched only on its FIRST
+        // WORD, which is exactly the part already shown. Searching "Karim"
+        // still finds Karim N.; searching "Nassar" finds nothing. Bio stays
+        // a full substring match because the bio is public in its entirety
+        // — matching it reveals nothing the viewer cannot already read.
+        query = query.whereRaw(
+          `(split_part(ap.display_name, ' ', 1) ILIKE ? OR ap.bio ILIKE ?)`,
+          [`${dto.q}%`, `%${dto.q}%`],
+        );
+      }
     }
 
     // Matches ANY artist who has at least one category in the requested list
@@ -70,12 +90,20 @@ export class ArtistsService {
       query = query.whereILike('ap.location_city', dto.city);
     }
 
-    if (dto.minPrice !== undefined) {
-      query = query.where('ap.base_price_usd', '>=', dto.minPrice);
+    // Price filters are snapped to band boundaries below the paying tier.
+    // The exact figure is withheld from the response, so letting it be
+    // recovered by bisecting minPrice would hand it straight back.
+    const minPrice =
+      tier === 'subscribed' ? dto.minPrice : snapPriceFloor(dto.minPrice);
+    const maxPrice =
+      tier === 'subscribed' ? dto.maxPrice : snapPriceCeiling(dto.maxPrice);
+
+    if (minPrice !== undefined) {
+      query = query.where('ap.base_price_usd', '>=', minPrice);
     }
 
-    if (dto.maxPrice !== undefined) {
-      query = query.where('ap.base_price_usd', '<=', dto.maxPrice);
+    if (maxPrice !== undefined) {
+      query = query.where('ap.base_price_usd', '<=', maxPrice);
     }
 
     if (dto.verifiedOnly) {
