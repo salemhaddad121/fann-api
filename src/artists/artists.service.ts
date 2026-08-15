@@ -15,6 +15,7 @@ import {
   type ViewerContext,
 } from './artist-visibility';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { computeProfileCompleteness } from './profile-completeness';
 
 @Injectable()
 export class ArtistsService {
@@ -265,7 +266,9 @@ export class ArtistsService {
       .orderBy([{ column: 'is_primary', order: 'desc' }, { column: 'sort_order', order: 'asc' }])
       .select('id', 'media_type', 'cdn_url', 'file_size_bytes', 'duration_sec', 'is_primary', 'sort_order');
 
-    return { ...profile, categories, media };
+    // Only on the artist's own view. It tells the edit form what to ask
+    // for; it is not a gate, and the public profile has no use for it.
+    return { ...profile, categories, media, completeness: computeProfileCompleteness(media) };
   }
 
   // ----------------------------------------------------------------
@@ -283,6 +286,8 @@ export class ArtistsService {
     if (dto.basePriceUsd   !== undefined) patch.base_price_usd   = dto.basePriceUsd;
     if (dto.languages      !== undefined) patch.languages        = JSON.stringify(dto.languages);
     if (dto.socialLinks    !== undefined) patch.social_links     = JSON.stringify(dto.socialLinks);
+    if (dto.depositUsd     !== undefined) patch.deposit_usd      = dto.depositUsd;
+    if (dto.cancellationPolicy !== undefined) patch.cancellation_policy = dto.cancellationPolicy;
 
     // categoryIds is a full replace of the artist's category set (1–4 IDs)
     if (dto.categoryIds !== undefined) {
