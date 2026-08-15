@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  // Scopes the BUILD to src. tsconfig.json stays broad so `tsc --noEmit`
+  // and the editor still typecheck specs and jest.setup.ts.
+  //
+  // Why this file exists: with no include/exclude, TypeScript takes every
+  // .ts file under the project root, which includes jest.setup.ts. That
+  // widens the common source root from src/ to the repo root, so main.ts
+  // is emitted to dist/src/main.js instead of dist/main.js — and both
+  // `npm start` and the Dockerfile's CMD run `node dist/main`.
+  //
+  // nest build picks this file up automatically.
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "jest.setup.ts",
+    "src/**/*.spec.ts",
+    "src/test-utils/**"
+  ]
+}
