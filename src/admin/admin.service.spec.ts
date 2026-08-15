@@ -10,6 +10,10 @@ const verificationStub = { recordAdminDecision: jest.fn() };
 // are about admin decision logic, so it is stubbed.
 const subscriptionsStub = { mintForPayment: jest.fn().mockResolvedValue({ minted: 0 }) };
 
+// Artist activation is gated on identity verification. These cases are
+// about other admin logic, so it is stubbed as already complete.
+const identityStub = { hasCompleteVerification: jest.fn().mockResolvedValue(true) };
+
 const baseFlag = {
   id: 'flag-1',
   status: 'open',
@@ -22,7 +26,7 @@ describe('AdminService.resolveFlag()', () => {
     const flags = createMockQueryBuilder();
     flags.first.mockResolvedValueOnce({ ...baseFlag, status: 'dismissed' });
     const db = createMockDb({ flags });
-    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any);
+    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any, identityStub as any);
 
     await expect(
       service.resolveFlag('admin-1', 'flag-1', { decision: 'dismissed' } as any),
@@ -35,7 +39,7 @@ describe('AdminService.resolveFlag()', () => {
     const notifications = createMockQueryBuilder();
     const auditLog = createMockQueryBuilder();
     const db = createMockDb({ flags, notifications, audit_log: auditLog });
-    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any);
+    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any, identityStub as any);
 
     await service.resolveFlag('admin-1', 'flag-1', { decision: 'dismissed' } as any);
 
@@ -50,7 +54,7 @@ describe('AdminService.resolveFlag()', () => {
     const notifications = createMockQueryBuilder();
     const auditLog = createMockQueryBuilder();
     const db = createMockDb({ flags, notifications, audit_log: auditLog });
-    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any);
+    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any, identityStub as any);
 
     await service.resolveFlag('admin-1', 'flag-1', { decision: 'dismissed' } as any);
 
@@ -67,7 +71,7 @@ describe('AdminService.resolveFlag()', () => {
     const notifications = createMockQueryBuilder();
     const auditLog = createMockQueryBuilder();
     const db = createMockDb({ flags, notifications, audit_log: auditLog });
-    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any);
+    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any, identityStub as any);
 
     await service.resolveFlag('admin-1', 'flag-1', { decision: 'actioned' } as any);
 
@@ -84,7 +88,7 @@ describe('AdminService.resolveFlag()', () => {
     const notifications = createMockQueryBuilder();
     const auditLog = createMockQueryBuilder();
     const db = createMockDb({ flags, messages, notifications, audit_log: auditLog });
-    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any);
+    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any, identityStub as any);
 
     await service.resolveFlag('admin-1', 'flag-1', { decision: 'actioned' } as any);
 
@@ -106,7 +110,7 @@ describe('AdminService.resolveFlag()', () => {
     const notifications = createMockQueryBuilder();
     const auditLog = createMockQueryBuilder();
     const db = createMockDb({ flags, conversations, notifications, audit_log: auditLog });
-    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any);
+    const service = new AdminService(db, verificationStub as any, subscriptionsStub as any, identityStub as any);
 
     await service.resolveFlag('admin-1', 'flag-1', { decision: 'actioned' } as any);
 

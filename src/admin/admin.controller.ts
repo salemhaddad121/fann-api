@@ -20,6 +20,7 @@ import { ReviewsService } from '../reviews/reviews.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { AnalyticsExportService } from '../analytics/analytics-export.service';
 import { SupportService } from '../support/support.service';
+import { IdentityDocumentsService } from '../verification/identity-documents.service';
 import {
   ListSupportTicketsDto,
   UpdateSupportTicketDto,
@@ -54,6 +55,7 @@ export class AdminController {
     private readonly analyticsExportService: AnalyticsExportService,
     private readonly verificationService: VerificationService,
     private readonly supportService: SupportService,
+    private readonly identityDocuments: IdentityDocumentsService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -229,6 +231,17 @@ export class AdminController {
   @Get('id-documents')
   listDocuments(@Query() dto: PaginationDto) {
     return this.adminService.listPendingDocuments(dto);
+  }
+
+  // GET /admin/id-documents/:id/view
+  //
+  // A short-lived presigned GET, issued per view rather than stored.
+  // Identity documents are not on the public CDN the way profile media is,
+  // so this is the only way to see one — and the link expiring in five
+  // minutes is what stops it being forwarded or bookmarked.
+  @Get('id-documents/:id/view')
+  async viewDocument(@Param('id', ParseUUIDPipe) docId: string) {
+    return { url: await this.identityDocuments.presignViewUrl(docId) };
   }
 
   // PATCH /admin/id-documents/:id

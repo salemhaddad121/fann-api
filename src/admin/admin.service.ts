@@ -7,6 +7,7 @@ import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { VerificationService } from '../verification/verification.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { IdentityDocumentsService } from '../verification/identity-documents.service';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
 import { aggregateValue } from '../common/db.util';
@@ -25,6 +26,24 @@ import {
 } from './dto/admin.dto';
 
 const BCRYPT_ROUNDS = 12;
+
+/**
+ * Whether a user has BOTH identity artefacts approved.
+ *
+ * Duplicated from IdentityDocumentsService.hasCompleteVerification()
+ * on purpose: this one runs inside the review transaction, so it sees the
+ * row that was just updated. Calling the service would read through a
+ * different connection and miss it.
+ */
+async function hasBothApproved(trx: Knex.Transaction, userId: string): Promise<boolean> {
+  const rows = await trx('id_documents')
+    .where({ user_id: userId, status: 'approved' })
+    .select('kind');
+
+  const approved = new Set(rows.map((r) => r.kind as string));
+  return approved.has('id_document') && approved.has('selfie');
+}
+
 
 // Ambiguous characters (0/O, 1/l/I) are left out because these get read out
 // over the phone. Guarantees one of each class so the result always passes
@@ -53,6 +72,7 @@ export class AdminService {
     @InjectConnection() private readonly db: Knex,
     private readonly verificationService: VerificationService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly identityDocuments: IdentityDocumentsService,
   ) {}
 
   // ================================================================
@@ -152,6 +172,26 @@ export class AdminService {
     if (!user) throw new NotFoundException('User not found.');
     if (user.role === 'admin') throw new BadRequestException('Cannot change status of admin accounts.');
 
+    // The artist identity gate. Activating is what publishes a profile —
+    // every public artist query filters on u.status = 'active' — so this is
+    // the one place that decision is made, and therefore the only place
+    // worth enforcing it.
+    //
+    // Only on the transition INTO active, and only for artists. Bookers are
+    // deliberately ungated, and an already-active artist is not re-checked:
+    // this rule arrived after accounts were live, and retroactively
+    // delisting them would be a far larger decision than adding a gate.
+    if (
+      dto.status === 'active' &&
+      user.role === 'artist' &&
+      user.status !== 'active' &&
+      !(await this.identityDocuments.hasCompleteVerification(userId))
+    ) {
+      throw new BadRequestException(
+        'This artist has not passed identity verification. Both the ID document and the selfie must be approved before the account can go live.',
+      );
+    }
+
     await this.db('users').where({ id: userId }).update({ status: dto.status });
 
     // Map status change → audit action
@@ -237,10 +277,16 @@ export class AdminService {
         'doc.id',
         'doc.user_id',
         'doc.status',
+        // Which artefact this is. Without it a reviewer cannot tell an ID
+        // scan from a selfie in the queue, and the two are judged
+        // differently — one is checked for validity, the other for whether
+        // it is the same person.
+        'doc.kind',
         'doc.uploaded_at',
         'u.email',
         'u.role',
         'u.account_code',
+        'u.status as user_status',
         this.db.raw(`COALESCE(ap.display_name, pp.display_name) AS display_name`),
       )
       .orderBy('doc.uploaded_at', 'asc'); // oldest first — FIFO review queue
@@ -275,12 +321,20 @@ export class AdminService {
         reviewed_at:      trx.fn.now(),
       });
 
-      // Approving the doc → flip is_verified on the artist profile
-      if (dto.decision === 'approved') {
-        await trx('artist_profiles')
-          .where({ user_id: doc.user_id })
-          .update({ is_verified: true });
-      }
+      // The verified badge means "identity confirmed", which now takes BOTH
+      // an ID document and a selfie. Flipping it on the first approval
+      // would badge an artist who has only submitted half of it — and the
+      // badge is exactly what a booker reads as assurance.
+      //
+      // Rejecting either one clears it, so a badge cannot survive the
+      // document it was based on being withdrawn.
+      const verified =
+        dto.decision === 'approved' &&
+        (await hasBothApproved(trx, doc.user_id));
+
+      await trx('artist_profiles')
+        .where({ user_id: doc.user_id })
+        .update({ is_verified: verified });
     });
 
     const auditAction =

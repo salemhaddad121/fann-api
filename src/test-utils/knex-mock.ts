@@ -50,6 +50,9 @@ export function createMockQueryBuilder() {
   qb.count = jest.fn(() => qb);
   qb.max = jest.fn(() => qb);
   qb.onConflict = jest.fn(() => qb);
+  // Upsert: .onConflict(...).merge(...) — chainable, so the terminal
+  // .returning()/.then() after it still resolves.
+  qb.merge = jest.fn(() => qb);
   qb.ignore = jest.fn();
 
   // Real Knex query builders are "thenable" — you can `await` the chain
