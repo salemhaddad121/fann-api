@@ -5,7 +5,9 @@ import {
   IsArray,
   IsInt,
   IsISO8601,
+  IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -46,4 +48,39 @@ export class RecordPageEventsDto {
   @ValidateNested({ each: true })
   @Type(() => PageEventDto)
   events: PageEventDto[];
+
+  // Client-generated, held in sessionStorage, so it dies with the tab and
+  // is never a cookie. It is what makes a session duration computable for
+  // a visitor with no account — without it a guest's page views are
+  // unlinkable and only countable.
+  //
+  // Optional so a client running older JS keeps reporting rather than
+  // having its whole batch rejected; those rows simply have no session.
+  @IsOptional()
+  @IsUUID()
+  sessionId?: string;
+}
+
+// A search that was actually executed. Recorded server-side from the search
+// handler, never posted by the client — a client-reported search count is
+// trivially inflated, and these numbers are meant to drive decisions about
+// which categories to recruit for.
+export class RecordSearchDto {
+  @IsOptional()
+  @IsUUID()
+  sessionId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  categoryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  queryText?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  resultCount?: number;
 }

@@ -43,6 +43,10 @@ export function createMockQueryBuilder() {
   qb.returning = jest.fn();
   qb.insert = jest.fn(() => qb);
   qb.delete = jest.fn();
+  // Knex exposes both spellings and the codebase uses `.del()` (see
+  // AnalyticsService.pruneOldEvents). Same jest.fn() behind both, so a test
+  // can stub either name and the other still reflects the call.
+  qb.del = qb.delete;
   qb.count = jest.fn(() => qb);
   qb.max = jest.fn(() => qb);
   qb.onConflict = jest.fn(() => qb);
