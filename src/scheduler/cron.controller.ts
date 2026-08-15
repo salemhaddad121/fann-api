@@ -150,4 +150,17 @@ export class CronController {
     this.assertAuthorised(authorization);
     await this.scheduler.runPaymentReconciliation();
   }
+  // Daily under SCHEDULER_MODE=http.
+  @Get('identity-retention')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async identityRetentionGet(@Headers('authorization') authorization?: string) {
+    return this.identityRetention(authorization);
+  }
+
+  @Post('identity-retention')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async identityRetention(@Headers('authorization') authorization?: string) {
+    this.assertAuthorised(authorization);
+    await this.scheduler.runIdentityDocumentRetention();
+  }
 }

@@ -7,7 +7,12 @@ import {
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { ConfigService } from '@nestjs/config';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
 import * as path from 'path';
@@ -17,6 +22,24 @@ export type IdDocumentKind = 'id_document' | 'selfie';
 
 /** Both artefacts an artist must submit. Order matters for the UI. */
 export const REQUIRED_KINDS: IdDocumentKind[] = ['id_document', 'selfie'];
+
+/**
+ * How long a decided document's FILE is kept before it is deleted from
+ * object storage. The row survives permanently either way — see migration
+ * 020 for why those are separate.
+ *
+ * These are policy, not physics, and they are deliberately short. Fann has
+ * no regulatory obligation to retain government ID, so the only reason to
+ * keep a scan after the decision is a later dispute about that decision,
+ * and the window only has to outlast the plausible period for one.
+ *
+ * Approved documents get longer because the relationship continues and a
+ * fraud question can surface months later. Rejected ones get less because
+ * there is no relationship to support — the window exists so the artist can
+ * still read why they were rejected and re-submit before the file goes.
+ */
+export const RETENTION_DAYS_APPROVED = 90;
+export const RETENTION_DAYS_REJECTED = 30;
 
 const MIME_MAP: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -188,6 +211,86 @@ export class IdentityDocumentsService {
       new GetObjectCommand({ Bucket: this.bucket, Key: doc.s3_key }),
       { expiresIn: 300 },
     );
+  }
+
+  /**
+   * Deletes identity files whose retention window has passed.
+   *
+   * Three groups, and the third is the one that matters most:
+   *
+   *   approved  — file removed RETENTION_DAYS_APPROVED after the decision
+   *   rejected  — file removed RETENTION_DAYS_REJECTED after the decision
+   *   deleted accounts — removed on the next run, whatever the status
+   *
+   * The last has no window at all. Someone who has closed their account has
+   * withdrawn the reason we held their passport, and "we will get to it in
+   * 90 days" is not an answer to that.
+   *
+   * PENDING documents are never touched. They are the ones still waiting to
+   * be looked at, and deleting the file would leave a reviewer with a
+   * decision to make and nothing to make it on.
+   *
+   * Object storage is deleted BEFORE the row is updated. If the delete
+   * fails the key stays put and the row is retried on the next run — the
+   * opposite order would drop our only pointer to the file and orphan it in
+   * the bucket forever, which is exactly the outcome this exists to avoid.
+   */
+  async pruneExpiredDocuments(): Promise<{
+    purged: number;
+    failed: number;
+  }> {
+    const candidates = await this.db('id_documents as d')
+      .join('users as u', 'u.id', 'd.user_id')
+      .whereNotNull('d.s3_key')
+      .where((b) =>
+        b
+          // Closed accounts: no window.
+          .whereNotNull('u.deleted_at')
+          .orWhere((b2) =>
+            b2
+              .where('d.status', 'approved')
+              .whereRaw(`d.reviewed_at < now() - interval '${RETENTION_DAYS_APPROVED} days'`),
+          )
+          .orWhere((b2) =>
+            b2
+              .where('d.status', 'rejected')
+              .whereRaw(`d.reviewed_at < now() - interval '${RETENTION_DAYS_REJECTED} days'`),
+          ),
+      )
+      .select('d.id', 'd.s3_key', 'd.status', 'd.user_id');
+
+    let purged = 0;
+    let failed = 0;
+
+    for (const doc of candidates) {
+      try {
+        await this.s3.send(
+          new DeleteObjectCommand({ Bucket: this.bucket, Key: doc.s3_key }),
+        );
+
+        await this.db('id_documents').where({ id: doc.id }).update({
+          s3_key: null,
+          purged_at: this.db.fn.now(),
+        });
+
+        purged++;
+      } catch (err) {
+        // One unreachable object must not stop the rest of the sweep.
+        failed++;
+        this.logger.error(
+          `[Retention] Failed to purge identity document ${doc.id}`,
+          err,
+        );
+      }
+    }
+
+    if (purged > 0 || failed > 0) {
+      this.logger.log(
+        `[Retention] Purged ${purged} identity document(s), ${failed} failed`,
+      );
+    }
+
+    return { purged, failed };
   }
 
   /**
