@@ -9,7 +9,7 @@ function makeEmail() {
   };
 }
 
-const config = { get: jest.fn(() => 'support@fann.app') };
+const config = { get: jest.fn(() => 'support@fann-leb.com') };
 
 function makeService(
   builders: Record<string, ReturnType<typeof createMockQueryBuilder>>,

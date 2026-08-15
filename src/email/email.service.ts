@@ -23,7 +23,15 @@ export class EmailService {
   // ----------------------------------------------------------------
   async send({ to, subject, html }: SendEmailInput): Promise<void> {
     const apiKey = this.configService.get<string>('RESEND_API_KEY');
-    const from   = this.configService.get<string>('EMAIL_FROM') ?? 'noreply@fann.app';
+    // fann-leb.com is the primary domain. The previous fallback was
+    // noreply@fann.app — a domain Fann has never owned, so anything that
+    // reached this line was sending from an address with no SPF, DKIM or
+    // DMARC behind it and was being rejected or spam-filed.
+    //
+    // ⚠️ This is only the fallback. EMAIL_FROM, set per environment, is what
+    // production actually sends as, and the sending domain has to be
+    // verified in Resend before either address delivers.
+    const from   = this.configService.get<string>('EMAIL_FROM') ?? 'noreply@fann-leb.com';
 
     if (!apiKey) {
       // No provider configured yet (e.g. local dev) — log instead of failing silently.
