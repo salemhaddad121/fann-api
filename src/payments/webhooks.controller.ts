@@ -10,6 +10,7 @@ import {
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { WebhooksService } from './webhooks.service';
+import { Public } from '../auth/decorators/auth.decorators';
 
 /**
  * Inbound provider callbacks.
@@ -24,6 +25,7 @@ import { WebhooksService } from './webhooks.service';
  * account.
  */
 @Controller('webhooks/payments')
+@Public()
 export class WebhooksController {
   constructor(private readonly webhooksService: WebhooksService) {}
 

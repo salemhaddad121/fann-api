@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'crypto';
 import { SchedulerService } from './scheduler.service';
+import { Public } from '../auth/decorators/auth.decorators';
 
 // HTTP triggers for the scheduled work.
 //
@@ -35,6 +36,7 @@ import { SchedulerService } from './scheduler.service';
 // which is exactly the `0 7 * * *` slot. POST is kept so the jobs can still
 // be triggered by hand with curl.
 @Controller('cron')
+@Public()
 export class CronController {
   constructor(
     private readonly scheduler: SchedulerService,

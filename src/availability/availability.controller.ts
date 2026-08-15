@@ -11,13 +11,14 @@ import {
 import { AvailabilityService } from './availability.service';
 import { CreateAvailabilityBlockDto } from './dto/availability.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
-import { CurrentUser, Roles } from '../auth/decorators/auth.decorators';
+import { CurrentUser, Public, Roles } from '../auth/decorators/auth.decorators';
 
 @Controller()
 export class AvailabilityController {
   constructor(private readonly availabilityService: AvailabilityService) {}
 
   // GET /artists/:userId/availability  — public, no auth required
+  @Public()
   @Get('artists/:userId/availability')
   getByArtist(@Param('userId', ParseUUIDPipe) artistUserId: string) {
     return this.availabilityService.getByArtistUserId(artistUserId);

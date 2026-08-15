@@ -12,7 +12,7 @@ import {
 import { ArtistsService } from './artists.service';
 import { SearchArtistsDto, UpdateArtistProfileDto } from './dto/artists.dto';
 import { JwtAuthGuard, OptionalJwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
-import { CurrentUser, Roles } from '../auth/decorators/auth.decorators';
+import { CurrentUser, Public, Roles } from '../auth/decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
 
 @Controller()
@@ -20,6 +20,7 @@ export class ArtistsController {
   constructor(private readonly artistsService: ArtistsService) {}
 
   // GET /categories
+  @Public()
   @Get('categories')
   getCategories() {
     return this.artistsService.getCategories();
@@ -31,6 +32,7 @@ export class ArtistsController {
   // and always has. The guard is here so the service can tell a guest from a
   // subscriber and shape the response accordingly — without it every caller
   // looks anonymous and everyone would get masked results.
+  @Public()
   @Get('artists')
   @UseGuards(OptionalJwtAuthGuard)
   search(
@@ -73,6 +75,7 @@ export class ArtistsController {
   }
 
   // GET /artists/:id
+  @Public()
   @Get('artists/:id')
   @UseGuards(OptionalJwtAuthGuard)
   findOne(

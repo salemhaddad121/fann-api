@@ -3,7 +3,7 @@ import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { SupportService } from './support.service';
 import { CreateSupportTicketDto } from './dto/support.dto';
 import { JwtAuthGuard, OptionalJwtAuthGuard } from '../auth/guards/auth.guards';
-import { CurrentUser } from '../auth/decorators/auth.decorators';
+import { CurrentUser, Public } from '../auth/decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
 
 @Controller('support')
@@ -27,6 +27,7 @@ export class SupportController {
   //
   // Listed before the auth guard so a flood is rejected before any session
   // work is done on it.
+  @Public()
   @Post('tickets')
   @UseGuards(ThrottlerGuard, OptionalJwtAuthGuard)
   @Throttle({ default: { ttl: 3600000, limit: 5 } })
