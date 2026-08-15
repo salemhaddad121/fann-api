@@ -121,6 +121,60 @@ export class EmailService {
     });
   }
 
+  // Goes to the support inbox, not to a user. The requester's address is
+  // put in the body rather than in a Reply-To header because send() takes
+  // no headers — whoever picks this up copies the address out.
+  async sendSupportTicketEmail(input: {
+    to: string;
+    ticketId: string;
+    subject: string;
+    body: string;
+    fromAddress: string;
+    sourcePath?: string;
+  }): Promise<void> {
+    const { to, ticketId, subject, body, fromAddress, sourcePath } = input;
+
+    await this.send({
+      to,
+      subject: `[Fann support] ${subject}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; color: #1a1a1a;">
+          <h2 style="color:#3C3489;">New support ticket</h2>
+          <p style="font-size:13px;color:#666;">
+            From: <strong>${escapeHtml(fromAddress)}</strong><br>
+            Ticket: ${ticketId}
+            ${sourcePath ? `<br>Raised from: ${escapeHtml(sourcePath)}` : ''}
+          </p>
+          <p style="font-weight:bold;">${escapeHtml(subject)}</p>
+          <p style="white-space:pre-line;">${escapeHtml(body)}</p>
+        </div>
+      `,
+    });
+  }
+
+  // Tells the person who raised a ticket that someone replied.
+  async sendSupportReplyEmail(input: {
+    to: string;
+    subject: string;
+    reply: string;
+  }): Promise<void> {
+    const { to, subject, reply } = input;
+
+    await this.send({
+      to,
+      subject: `Re: ${subject}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
+          <h2 style="color:#3C3489;">We've replied to your message</h2>
+          <p style="white-space:pre-line;">${escapeHtml(reply)}</p>
+          <p style="font-size:13px;color:#666;">
+            Reply to this email if you need anything else.
+          </p>
+        </div>
+      `,
+    });
+  }
+
   async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
     await this.send({
       to,
@@ -183,4 +237,22 @@ export class EmailService {
       `,
     });
   }
+}
+
+/**
+ * Escapes user-supplied text before it goes into an HTML email.
+ *
+ * Support ticket subjects and bodies are typed by anyone, including
+ * signed-out visitors, and they are interpolated straight into markup. A
+ * body containing a tag would otherwise render as markup in the support
+ * inbox — at best mangling the message, at worst smuggling a link that
+ * looks like it came from Fann.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
