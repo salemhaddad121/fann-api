@@ -10,8 +10,9 @@ import {
 } from '@nestjs/common';
 import { ArtistsService } from './artists.service';
 import { SearchArtistsDto, UpdateArtistProfileDto } from './dto/artists.dto';
-import { JwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
+import { JwtAuthGuard, OptionalJwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
 import { CurrentUser, Roles } from '../auth/decorators/auth.decorators';
+import { UserRecord } from '../users/users.types';
 
 @Controller()
 export class ArtistsController {
@@ -24,9 +25,15 @@ export class ArtistsController {
   }
 
   // GET /artists?q=&categories=&country=&city=&minPrice=&maxPrice=&verifiedOnly=&availableOn=&sort=&page=&limit=
+  //
+  // OptionalJwtAuthGuard, not JwtAuthGuard: this route stays open to guests
+  // and always has. The guard is here so the service can tell a guest from a
+  // subscriber and shape the response accordingly — without it every caller
+  // looks anonymous and everyone would get masked results.
   @Get('artists')
-  search(@Query() dto: SearchArtistsDto) {
-    return this.artistsService.search(dto);
+  @UseGuards(OptionalJwtAuthGuard)
+  search(@Query() dto: SearchArtistsDto, @CurrentUser() viewer?: UserRecord) {
+    return this.artistsService.search(dto, { userId: viewer?.id, role: viewer?.role });
   }
 
   // GET /artists/me  — must come before /:id to avoid UUID parse on "me"
@@ -58,7 +65,11 @@ export class ArtistsController {
 
   // GET /artists/:id
   @Get('artists/:id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.artistsService.findOne(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() viewer?: UserRecord,
+  ) {
+    return this.artistsService.findOne(id, { userId: viewer?.id, role: viewer?.role });
   }
 }

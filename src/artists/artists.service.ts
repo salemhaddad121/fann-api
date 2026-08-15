@@ -8,6 +8,12 @@ import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { aggregateValue } from '../common/db.util';
 import { SearchArtistsDto, UpdateArtistProfileDto } from './dto/artists.dto';
+import {
+  profileColumnsFor,
+  resolveViewerTier,
+  shapeArtistProfile,
+  type ViewerContext,
+} from './artist-visibility';
 
 @Injectable()
 export class ArtistsService {
@@ -16,28 +22,21 @@ export class ArtistsService {
   // ----------------------------------------------------------------
   // Search / list
   // ----------------------------------------------------------------
-  async search(dto: SearchArtistsDto) {
+  async search(dto: SearchArtistsDto, viewer: ViewerContext = {}) {
     const page  = dto.page  ?? 1;
     const limit = dto.limit ?? 20;
     const offset = (page - 1) * limit;
 
+    // Search results are shaped exactly like single profiles. A leak here
+    // would be worse than one on a profile page, not better: search returns
+    // the whole roster at once, so an unshaped list hands over every artist
+    // in one request.
+    const tier = await resolveViewerTier(this.db, viewer);
+
     let query = this.db('artist_profiles as ap')
       .join('users as u', 'u.id', 'ap.user_id')
       .where('u.status', 'active')
-      .select(
-        'ap.id',
-        'ap.user_id',
-        'ap.display_name',
-        'ap.bio',
-        'ap.location_city',
-        'ap.location_country',
-        'ap.base_price_usd',
-        'ap.languages',
-        'ap.social_links',
-        'ap.is_verified',
-        'ap.thumbnail_url',
-        'ap.created_at',
-      );
+      .select(...profileColumnsFor(tier));
 
     // Filters
     if (dto.q) {
@@ -122,7 +121,7 @@ export class ArtistsService {
     }
 
     const data = rows.map((r) => ({
-      ...r,
+      ...shapeArtistProfile(r, tier),
       categories: categoriesByArtist.get(r.id) ?? [],
     }));
 
@@ -140,16 +139,30 @@ export class ArtistsService {
   // ----------------------------------------------------------------
   // Get single artist profile (public)
   // ----------------------------------------------------------------
-  async findOne(artistProfileId: string) {
+  async findOne(artistProfileId: string, viewer: ViewerContext = {}) {
+    // Who owns this profile has to be known before the columns are chosen,
+    // because an artist opening their own public page must not find their
+    // own name masked back at them. One indexed lookup on the primary key.
+    const owner = await this.db('artist_profiles as ap')
+      .join('users as u', 'u.id', 'ap.user_id')
+      .where('ap.id', artistProfileId)
+      .where('u.status', 'active')
+      .select('ap.user_id')
+      .first();
+
+    if (!owner) throw new NotFoundException('Artist not found.');
+
+    const tier = await resolveViewerTier(this.db, viewer, owner.user_id);
+
     const profile = await this.db('artist_profiles as ap')
       .join('users as u', 'u.id', 'ap.user_id')
       .where('ap.id', artistProfileId)
       .where('u.status', 'active')
       .select(
-        'ap.*',
-        // Rating aggregates — populated by reviews.service.ts
-        'ap.avg_rating',
-        'ap.review_count',
+        // No more `ap.*`. Every column is named, per tier, so a column
+        // added to this table later is private until someone chooses to
+        // expose it.
+        ...profileColumnsFor(tier),
         // When the account was created, for "Date joined" on the public
         // profile. Deliberately the user row, not ap.created_at — the
         // profile row is written after the account, so they differ by up
@@ -188,7 +201,7 @@ export class ArtistsService {
       .first();
 
     return {
-      ...profile,
+      ...shapeArtistProfile(profile, tier),
       categories,
       media,
       availability,
