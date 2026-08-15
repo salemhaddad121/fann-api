@@ -90,6 +90,41 @@ const PRICE_BANDS: { max: number; label: string }[] = [
   { max: 2500, label: '$1,000–$2,500' },
 ];
 
+/** The band boundaries, ascending. Used to snap filters for non-payers. */
+const BAND_EDGES = PRICE_BANDS.map((b) => b.max);
+
+/**
+ * Snaps a price filter down to the band boundary at or below it.
+ *
+ * Without this the band is decoration. A viewer who only sees
+ * "$250–$500" can send minPrice=340, then 341, then 342, and read the exact
+ * figure off which query stops returning the artist — the filter hands back
+ * precision the response deliberately withheld.
+ *
+ * Snapping means a non-paying viewer can only ever filter at the same
+ * granularity they can see. `undefined` passes through untouched so an
+ * absent filter stays absent.
+ */
+export function snapPriceFloor(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  // Largest edge at or below the request; 0 when below the first band.
+  const edge = [...BAND_EDGES].reverse().find((e) => e <= value);
+  return edge ?? 0;
+}
+
+/**
+ * The ceiling equivalent. Rounds UP to the next boundary, so the filter
+ * stays inclusive of everything in the band the viewer picked.
+ */
+export function snapPriceCeiling(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const edge = BAND_EDGES.find((e) => e >= value);
+  // Above the last band there is no ceiling worth applying — "$2,500+" is
+  // open-ended, so returning undefined drops the filter rather than
+  // inventing a cap.
+  return edge;
+}
+
 export function priceBand(basePriceUsd: unknown): string | null {
   if (basePriceUsd === null || basePriceUsd === undefined) return null;
   // NUMERIC arrives as a string from node-postgres.

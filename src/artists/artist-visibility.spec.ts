@@ -1,5 +1,7 @@
 import {
   priceBand,
+  snapPriceCeiling,
+  snapPriceFloor,
   profileColumnsFor,
   resolveViewerTier,
   shapeArtistProfile,
@@ -194,5 +196,48 @@ describe('resolveViewerTier()', () => {
     const tier = await resolveViewerTier(createMockDb(), { userId: 'a1', role: 'admin' });
 
     expect(tier).toBe('subscribed');
+  });
+});
+
+describe('price filter snapping', () => {
+  it.each([
+    [340, 250],
+    [251, 250],
+    [99, 0],
+    [100, 100],
+    [2600, 2500],
+  ])('snaps a floor of %s down to %s', (input, expected) => {
+    // A viewer who only sees "$250–$500" could otherwise send minPrice=340,
+    // then 341, then 342, and read the exact figure off which query stops
+    // returning the artist. Snapping means they can only filter at the
+    // granularity they can already see.
+    expect(snapPriceFloor(input)).toBe(expected);
+  });
+
+  it.each([
+    [340, 500],
+    [101, 250],
+    [50, 100],
+  ])('snaps a ceiling of %s up to %s', (input, expected) => {
+    expect(snapPriceCeiling(input)).toBe(expected);
+  });
+
+  it('drops a ceiling above the top band rather than inventing a cap', () => {
+    // "$2,500+" is open-ended; capping it would exclude artists the viewer
+    // asked to see.
+    expect(snapPriceCeiling(9000)).toBeUndefined();
+  });
+
+  it('leaves an absent filter absent', () => {
+    expect(snapPriceFloor(undefined)).toBeUndefined();
+    expect(snapPriceCeiling(undefined)).toBeUndefined();
+  });
+
+  it('never lets a snapped floor exceed the price it was derived from', () => {
+    // The property that matters: snapping must only ever widen the result
+    // set, never narrow it past what was asked for.
+    for (const value of [0, 1, 99, 100, 249, 250, 499, 1200, 5000]) {
+      expect(snapPriceFloor(value)!).toBeLessThanOrEqual(value);
+    }
   });
 });
