@@ -21,6 +21,8 @@ const CHAIN_METHODS = [
   "whereNotNull",
   "whereILike",
   "whereRaw",
+  "whereExists",
+  "whereNotExists",
   "orderBy",
   "groupBy",
   "select",
@@ -77,6 +79,9 @@ export function createMockDb(tableBuilders: Record<string, any> = {}) {
   const db: any = jest.fn((table: string) => tableBuilders[table] ?? createMockQueryBuilder());
   db.fn = { now: jest.fn(() => "NOW()") };
   db.raw = jest.fn((sql: string) => sql);
+  // Column reference used inside correlated subqueries, e.g.
+  // `.where('ac.artist_profile_id', db.ref('ap.id'))` in ArtistsService.search.
+  db.ref = jest.fn((column: string) => column);
   db.transaction = jest.fn(async (cb: (trx: any) => Promise<any>) => cb(db));
 
   // Knex's connection pool, used by SchedulerService.withCronLock() to hold
