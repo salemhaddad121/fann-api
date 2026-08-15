@@ -2,14 +2,13 @@
 
 ## Status snapshot
 
-**A note on this file's history, worth being upfront about:** this snapshot was last properly
-updated before several rounds of frontend-driven backend work (Saved artists, `public-info`,
-flag-resolution notifications, account deletion, tests) — it still said *"No frontend app code
-yet"* as a known gap until this update, which was simply wrong by the time this was read. That
-work has been kept documented in the **frontend** repo's README instead, session to session,
-since that's where it was driven from. This update brings the snapshot back in line with reality
-and adds a dedicated section below for the backend-focused session that prompted this pass —
-TypeScript errors, httpOnly cookie migration, and three smaller features.
+**A note on this file's history, worth being upfront about:** this snapshot has drifted from
+reality more than once. It previously claimed *"No frontend app code yet"* long after the frontend
+existed, and until this pass it still reported 53 tests across 8 suites and listed rate limiting
+as missing — both stale by a wide margin. It is now current as of the seven-wave build
+(migrations through `018`, subscriptions through payment providers). The older session sections
+below are kept as written: they record why particular decisions were made, and rewriting them
+would lose that.
 
 **Working / built:**
 - Auth (register, login, OTP via WhatsApp Business Cloud API, social login, forgot/reset
@@ -29,7 +28,24 @@ TypeScript errors, httpOnly cookie migration, and three smaller features.
   across every status, media, ID documents, availability blocks, conversations/messages, 4
   bookings across every state, reviews, notifications, payments, a flag, and audit log. Password
   for every seeded user: `Fann@dev2025`.
-- Tests (`npm test`, Jest) — 53 tests across 8 suites; see "Tests" below.
+- Tests (`npm test`, Jest) — 179 tests across 20 suites; see "Tests" below.
+
+**Added by the seven-wave build (migration `018` onward) — see "The seven waves" below:**
+- **Subscriptions** — day $5 / month $15 / year $100. Day access sells as *credits* that sit
+  unused until activated, because payment confirmation is a human confirming a transfer and can
+  take hours. Purchases made while a plan is running are *queued*, not overlapped.
+- **Payments are provider-agnostic** — `PaymentProvider` interface with `manual` (working, and
+  the permanent fallback), `mock` (working, dev-only, exercises the full automated path), and
+  `whish` / `omt` stubs. Webhooks are recorded before validation, signature-checked over the raw
+  body, amount-verified against the stored intent, and idempotent on replay.
+- **Guest browsing** — search and artist profiles are open to signed-out visitors, with names
+  masked, prices banded and social links withheld **server-side**. Booking terms (deposit,
+  cancellation policy) are deliberately public to every tier.
+- **Analytics** — guest-capable telemetry keyed on a `sessionStorage` session id, search events
+  recorded server-side, admin aggregates (session duration, time per page, category demand,
+  guest/authenticated split), and a real multi-sheet `.xlsx` export via `exceljs`.
+- **Support tickets** — `/support/tickets` open to guests, staff replies, admin queue.
+- **Rate limiting** — `@nestjs/throttler` on auth, telemetry and support.
 
 **Known gaps:**
 1. WhatsApp OTP requires a Meta-approved "authentication" template before it will actually send —
@@ -108,6 +124,80 @@ sign-in, WhatsApp OTP, Resend email, and S3 all degrade rather than block startu
 "OAuth providers are optional" below. Anything else that's genuinely required fails at boot
 naming the missing variable (`src/common/config.util.ts`'s `requireConfig`), rather than
 surfacing as a confusing error later.
+
+
+## The seven waves
+
+Built against `FANN-CHANGE-PLAN.md`, in dependency order. Each was its own branch, verified
+against a real local Postgres rather than only typechecked, with the seed baseline restored
+afterwards. What follows is the reasoning worth keeping, not a changelog.
+
+**Wave 0 — migration `018`.** Everything schema-level in one idempotent file: subscriptions,
+payment provider columns, the webhook audit table, artist deposit/cancellation terms, support
+tickets, and guest telemetry. Three things the plan missed and this migration fixes: `payments`
+had `period_start`, `period_end` and `transfer_service` as `NOT NULL`, which a purchase intent
+cannot fill — a day-pass credit has no period until someone activates it. Note also that
+`scripts/migrate.sh` runs each file with `--single-transaction`, and Postgres forbids *using* a
+newly added enum value in the transaction that added it, so any backfill using
+`awaiting_provider`/`paid`/`disputed` must go in a later file.
+
+**Wave 1 — auth primitives.** `OptionalJwtAuthGuard` resolves a session when a cookie is present
+and returns null when it is not; it never rejects, because on a guest-friendly route a missing,
+expired or malformed token all mean "serve the guest view". `getActiveSubscription()` is the one
+place paid access is decided, and it verifies `expires_at` rather than trusting `status` —
+status is flipped by a cron, and the gap between lapsing and the next run would otherwise be free
+access. `main.ts` gained `rawBody: true` here, one line, because webhook signatures are an HMAC
+over the exact bytes sent and re-serialised JSON does not reproduce them.
+
+**Wave 2 — subscriptions.** Stacking is the interesting part: a purchase made while a plan is
+running is queued with `expires_at` left NULL and filled in *at promotion*, so an early
+cancellation or an admin adjustment shifts the whole chain instead of leaving a stale date.
+`mintForPayment()` is the only code that turns a payment into access — the admin confirm button
+and the Wave 7 webhook both call it, and it refuses to mint twice for one payment.
+
+**Wave 3 — guest experience.** Shaping is server-side and column-level: `findOne` no longer
+selects `ap.*`, and both it and `search` take an explicit allowlist per tier, so a column added
+to `artist_profiles` later stays private until someone exposes it deliberately. Three tiers, not
+two — guests and registered users get identical *data*, but the API reports which it saw so the
+client can ask for the right thing ("sign in" vs "subscribe"). Two viewers bypass the paywall: an
+artist opening their own profile, and an admin moderating one.
+
+**Wave 4 — analytics.** Searches are recorded from inside the search handler, never posted by the
+client, because a client-reported count is trivially inflated and these numbers exist to decide
+which categories to recruit for. Session duration discards single-event sessions — a one-page
+session has no measurable duration, and leaving bounces in makes the metric describe bounce rate.
+The 90-day prune documented in `014` is now actually wired, and covers `search_events` too.
+
+**Wave 5 — support.** Open to guests, because the people most likely to need help are the ones
+who cannot get in. A signed-in user's address comes from their account and any `guestEmail` in the
+body is ignored. Ticket creation never fails on a notification problem: the row is the source of
+truth, and reporting failure would make someone retype a message already saved.
+
+**Wave 6 — batched UI.** Admin logout (an admin genuinely could not sign out — logout lives in the
+sidebar, `ADMIN_NAV` is empty by design, and `TopNav` only links to `/account`), account code
+hidden from the profile but kept as the reconciliation key, deposit and cancellation terms, the
+artist media minimum, and the site footer.
+
+**Wave 7 — payment providers.** See `src/payments/providers/README.md` for the full contract and
+what each real provider will need. The webhook ordering is the design: record before validating,
+verify over raw bytes, match on `(provider, provider_ref)`, compare amount *and* currency against
+the stored intent, no-op if already confirmed, and only then mint. Webhooks always answer 200 even
+when rejected, because most providers treat 4xx as retry and will hammer for hours.
+
+### Things that were fixed along the way, not planned
+
+- **Rate limits were declared but not enforced.** `@Throttle` configures a bucket; `ThrottlerGuard`
+  enforces it, and this project opts routes in one at a time. `/support/tickets` and
+  `/analytics/page-views` carried the decorator without the guard, so both were unlimited while
+  reading as though they were not.
+- **`npm start` never worked.** `tsconfig.json` declares no `include`, so `jest.setup.ts` at the
+  repo root widened the compile root and `main.ts` landed at `dist/src/main.js`. Fixed with
+  `tsconfig.build.json`. Docker was never affected — its `COPY` steps never included that file —
+  but it *was* shipping 20 compiled spec files into the production image, which the same fix
+  removes.
+- **`PaymentsTab` fed `null` to `new Date()`**, rendering "Invalid Date" once plan purchases
+  stopped carrying a period, and its service labels were keyed on lowercase strings the
+  `payment_service` enum never produces.
 
 
 ## Scheduled work: `SCHEDULER_MODE`
@@ -385,7 +475,25 @@ and already returns exactly what's needed (`role` + `profileId`) for a bare user
 
 ## Tests
 
-`npm test` (Jest), 53 tests across 8 suites — a real foundation, not exhaustive coverage:
+`npm test` (Jest), **179 tests across 20 suites** — a real foundation, not exhaustive coverage.
+Statement coverage is ~25%, and that number is worth reading carefully: the suites deliberately
+concentrate on logic where being wrong costs money or leaks data, and leave controllers and thin
+CRUD services largely uncovered. A passing run proves the rules below hold; it does not prove the
+app works, which is why every wave was also verified against a real Postgres by hand.
+
+What the newer suites protect:
+- **Subscription stacking** — that a day pass mints as an unactivated credit, that a purchase made
+  while a plan runs is queued with no expiry, and that minting refuses to run twice for one payment.
+- **Webhook handling** — replay is a no-op, a bad signature mints nothing, and a *correctly signed*
+  webhook claiming the wrong amount or currency is marked disputed rather than confirmed.
+- **Guest shaping** — that no paywalled field survives shaping for a guest or a registered user,
+  that the masking never leaks a surname, and that booking terms reach every tier.
+- **Name masking** — single-word names, band names with connectors, Arabic script, and emoji
+  (which must not be sliced into a lone surrogate).
+- **Telemetry** — that identity comes from the session and never the payload, and that a failed
+  search-event insert cannot turn a working search into a 500.
+
+The original foundation, still in place:
 - Service-level unit tests against a hand-rolled Knex mock (`src/test-utils/knex-mock.ts`) for
   business logic worth protecting: booking status-transition guards, the review mutual-blind
   window and unlock-on-pair logic, new-message notification dedup, flag-resolution paths, the new
@@ -401,18 +509,40 @@ Postgres + Redis for exactly that reason, but it wasn't wired into the automated
 
 ## Next up
 
-What's actually open right now, as far as this pass could tell:
-- Applying the S3 CORS policy in the real AWS console (`docs/s3-cors-setup.md` has the exact
-  JSON) — an account-access step, not fixable from either repo.
-- The 2 open `postcss` advisories in the frontend, which can only be closed by Next.js shipping
-  a patched copy — see the audit section above, and do not "fix" them with `--force`.
-- Test coverage is 15% of statements / 12.5% of functions; controllers and the artists,
-  availability, media, notifications, saved and scheduler services are at 0%. The 53 tests cover
-  the business logic most worth protecting, but a passing suite currently proves less than it
-  looks like it does.
-- Rate limiting. There's nothing throttling `/auth/login`, `/auth/send-otp`, or
-  `/auth/forgot-password` — all three are worth `@nestjs/throttler` before this is public.
+What's actually open right now.
+
+**Needs an account or a decision, not code:**
+- **R2 bucket CORS and `ExposeHeaders: ETag`** — a Cloudflare dashboard action
+  (`docs/s3-cors-setup.md`). Until it is applied, browser uploads fail, and without the ETag
+  header the uploader hangs at 100% and orphans the file.
+- **`CDN_BASE_URL` points at `cdn.fann.guru`**, which still needs binding as an R2 custom domain.
+- **`SUPPORT_INBOX_EMAIL` is unset.** Tickets are always saved; the notification currently falls
+  back to `EMAIL_FROM` so it reaches a real inbox rather than vanishing.
+- **Payment provider credentials.** `src/payments/providers/README.md` lists exactly what Whish
+  and OMT each need. Until then `PAYMENT_PROVIDER=manual`, which works.
+
+**Known and deliberately deferred:**
+- **Artist ID + selfie verification is not built.** An unverified artist is currently listed and
+  bookable. `artist_profiles.is_verified` is a display badge with no enforcement behind it,
+  `id_documents` is only an admin review queue, and `src/verification/` is an audit log. This is
+  the largest outstanding gap.
+- **Masked names can be confirmed by probing.** `?q=` still filters on the real `display_name`,
+  so a guest can guess a surname and see whether it matches; `minPrice`/`maxPrice` can similarly
+  bracket the exact price the band hides. Closing it means restricting `q` for anonymous callers
+  or rate-limiting probes, and both cost real search usability.
+- **No global default-deny auth guard.** Routes are public by *omission* of `@UseGuards`, so a
+  new route added without one is exposed by default. Making `@Public()` real means registering
+  `JwtAuthGuard` globally and auditing every currently-public route — worth doing, but as its own
+  focused change, since missing one silently breaks guest browsing.
+- **Crons duplicate if the API is ever scaled past one instance** under
+  `SCHEDULER_MODE=in-process`. See "Scheduled work" above.
+
+**Quality:**
+- Coverage is ~25% of statements. Controllers, media, availability and notifications remain
+  largely untested.
+- No integration/e2e tests against a real database. Every wave was verified by hand against local
+  Postgres instead, which does not survive as a regression net.
+- The two open `postcss` advisories in the frontend can only be closed by Next.js shipping a
+  patched copy — see the audit section above, and do not "fix" them with `--force`.
 - Revisiting the cookie `SameSite` choice if the frontend and backend ever end up on genuinely
   unrelated domains instead of a shared parent domain.
-- Integration/e2e test coverage against a real database, if that's worth the infrastructure.
-- Whatever surfaces from actually using this day to day.
