@@ -515,7 +515,13 @@ What's actually open right now.
 - **R2 bucket CORS and `ExposeHeaders: ETag`** — a Cloudflare dashboard action
   (`docs/s3-cors-setup.md`). Until it is applied, browser uploads fail, and without the ETag
   header the uploader hangs at 100% and orphans the file.
-- **`CDN_BASE_URL` points at `cdn.fann.guru`**, which still needs binding as an R2 custom domain.
+- **`CDN_BASE_URL` points at `cdn.fann.guru`**, which still needs binding as an R2 custom domain —
+  but **not before the identity documents are moved out of `fann-media`.** Both public media
+  (`uploads/`) and government ID scans (`identity/`) live in that one bucket, and an R2 custom
+  domain grants public read to the whole bucket with no way to scope it to a prefix. Binding it
+  today would publish every artist's ID at a guessable-shaped URL and quietly undo the isolation
+  `identity-documents.service.ts` is built around. Steps and the fix in
+  `docs/cloudflare-console-steps.md`.
 - **`SUPPORT_INBOX_EMAIL` is unset.** Tickets are always saved; the notification currently falls
   back to `EMAIL_FROM` so it reaches a real inbox rather than vanishing.
 - **Payment provider credentials.** `src/payments/providers/README.md` lists exactly what Whish
