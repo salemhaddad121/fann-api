@@ -10,7 +10,11 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 RUN npm ci
 
-COPY tsconfig.json nest-cli.json ./
+# tsconfig.build.json scopes the build to src and drops specs and
+# test-utils. Without it here, nest falls back to tsconfig.json and
+# compiles the spec files that `COPY src` brings along — 20 of them were
+# shipping in the production image.
+COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
