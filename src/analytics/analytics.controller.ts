@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AnalyticsService } from './analytics.service';
 import { RecordPageEventsDto } from './dto/analytics.dto';
 import { OptionalJwtAuthGuard } from '../auth/guards/auth.guards';
@@ -27,7 +27,7 @@ export class AnalyticsController {
   // Raised to 30/60s here: still a hard ceiling on write volume from one
   // client, but it will not drop legitimate telemetry from an active user.
   @Post('page-views')
-  @UseGuards(OptionalJwtAuthGuard)
+  @UseGuards(ThrottlerGuard, OptionalJwtAuthGuard)
   @Throttle({ default: { ttl: 60000, limit: 30 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   async recordPageViews(
