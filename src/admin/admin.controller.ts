@@ -19,6 +19,11 @@ import { VerificationService } from '../verification/verification.service';
 import { ReviewsService } from '../reviews/reviews.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { AnalyticsExportService } from '../analytics/analytics-export.service';
+import { SupportService } from '../support/support.service';
+import {
+  ListSupportTicketsDto,
+  UpdateSupportTicketDto,
+} from '../support/dto/support.dto';
 import {
   AuditLogDto,
   CreateCategoryDto,
@@ -48,6 +53,7 @@ export class AdminController {
     private readonly analyticsService: AnalyticsService,
     private readonly analyticsExportService: AnalyticsExportService,
     private readonly verificationService: VerificationService,
+    private readonly supportService: SupportService,
   ) {}
 
   // ----------------------------------------------------------------
@@ -146,6 +152,32 @@ export class AdminController {
       'Content-Length': String(buffer.length),
     });
     res.end(buffer);
+  }
+
+  // ----------------------------------------------------------------
+  // Support
+  // ----------------------------------------------------------------
+
+  // GET /admin/support?status=&page=&limit=
+  @Get('support')
+  listSupportTickets(@Query() dto: ListSupportTicketsDto & PaginationDto) {
+    return this.supportService.list(dto);
+  }
+
+  // GET /admin/support/:id — the ticket with its full thread
+  @Get('support/:id')
+  getSupportTicket(@Param('id', ParseUUIDPipe) id: string) {
+    return this.supportService.getOne(id);
+  }
+
+  // PATCH /admin/support/:id — status, assignment, and staff replies
+  @Patch('support/:id')
+  updateSupportTicket(
+    @CurrentUser('id') adminId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSupportTicketDto,
+  ) {
+    return this.supportService.update(adminId, id, dto);
   }
 
   // ----------------------------------------------------------------
