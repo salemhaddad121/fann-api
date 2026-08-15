@@ -31,6 +31,60 @@ function makeService(builders: Record<string, ReturnType<typeof createMockQueryB
   return new IdentityDocumentsService(createMockDb(builders), config);
 }
 
+/** A config where only the listed keys are set. */
+function configWith(values: Record<string, string>) {
+  return {
+    get: jest.fn((key: string) => values[key]),
+    getOrThrow: jest.fn((key: string) => {
+      if (!(key in values)) throw new Error(`missing ${key}`);
+      return values[key];
+    }),
+  } as any;
+}
+
+const S3_CREDS = {
+  AWS_REGION: 'auto',
+  AWS_ACCESS_KEY_ID: 'key',
+  AWS_SECRET_ACCESS_KEY: 'secret',
+};
+
+describe('IdentityDocumentsService — which bucket it uses', () => {
+  it('uses S3_IDENTITY_BUCKET when one is configured', async () => {
+    // The whole point of the split: a custom domain on the media bucket
+    // grants public read to that entire bucket, so ID scans must not be
+    // sitting in it.
+    const service = new IdentityDocumentsService(
+      createMockDb(),
+      configWith({ ...S3_CREDS, S3_BUCKET: 'fann-media', S3_IDENTITY_BUCKET: 'fann-identity' }),
+    );
+
+    expect((service as any).bucket).toBe('fann-identity');
+  });
+
+  it('falls back to S3_BUCKET when it is not set', async () => {
+    // Deploying this change must be a no-op. Switching buckets at deploy
+    // time would strand every existing document the moment the new code
+    // booted — an admin opening a pending review would get a 404.
+    const service = new IdentityDocumentsService(
+      createMockDb(),
+      configWith({ ...S3_CREDS, S3_BUCKET: 'fann-media' }),
+    );
+
+    expect((service as any).bucket).toBe('fann-media');
+  });
+
+  it('falls back when the variable is present but blank', async () => {
+    // `S3_IDENTITY_BUCKET=` in a .env file reads as '', not undefined —
+    // and an empty bucket name would fail at request time, not boot time.
+    const service = new IdentityDocumentsService(
+      createMockDb(),
+      configWith({ ...S3_CREDS, S3_BUCKET: 'fann-media', S3_IDENTITY_BUCKET: '' }),
+    );
+
+    expect((service as any).bucket).toBe('fann-media');
+  });
+});
+
 describe('IdentityDocumentsService.presign()', () => {
   it('rejects a file type it cannot serve back', async () => {
     const service = makeService();
