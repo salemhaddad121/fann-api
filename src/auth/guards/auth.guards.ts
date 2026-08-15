@@ -6,14 +6,41 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
-import { ROLES_KEY } from '../decorators/auth.decorators';
+import { IS_PUBLIC_KEY, ROLES_KEY } from '../decorators/auth.decorators';
 import { UserRole } from '../../users/users.types';
 
 // ----------------------------------------------------------------
-// JWT guard — attach to any route that requires authentication
+// JWT guard — registered GLOBALLY in app.module.ts.
+//
+// The API is default-deny: every route requires a session unless it is
+// marked @Public(). That direction is the whole point — a route added
+// next month is private until someone deliberately opens it, rather than
+// public until someone remembers to guard it. Before this, routes were
+// public by omission of @UseGuards, so forgetting one exposed it silently.
+//
+// Still listed explicitly on some controllers. That is redundant but
+// harmless, and it keeps "this is authenticated" readable at the point of
+// use rather than only in app.module.ts.
 // ----------------------------------------------------------------
 @Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {}
+export class JwtAuthGuard extends AuthGuard('jwt') {
+  constructor(private readonly reflector: Reflector) {
+    super();
+  }
+
+  canActivate(context: ExecutionContext) {
+    // getAllAndOverride so @Public() works on a whole controller as well as
+    // a single handler — the cron and webhook controllers are public in
+    // their entirety.
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isPublic) return true;
+    return super.canActivate(context);
+  }
+}
 
 // ----------------------------------------------------------------
 // Optional JWT guard — for routes that serve BOTH guests and members

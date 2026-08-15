@@ -1,5 +1,6 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { UsersService } from './users.service';
+import { Public } from '../auth/decorators/auth.decorators';
 
 @Controller('users')
 export class UsersController {
@@ -8,6 +9,7 @@ export class UsersController {
   // GET /users/:id/public-info — public, no guard. Deliberately minimal:
   // name, thumbnail, role, and the profile id needed to link to
   // /artists/[id] or /planners/[id]. No email/phone/status exposed.
+  @Public()
   @Get(':id/public-info')
   getPublicInfo(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.getPublicInfo(id);

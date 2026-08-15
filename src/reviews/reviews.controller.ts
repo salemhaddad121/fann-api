@@ -12,7 +12,7 @@ import {
 import { ReviewsService } from './reviews.service';
 import { SubmitReviewDto } from './dto/reviews.dto';
 import { JwtAuthGuard } from '../auth/guards/auth.guards';
-import { CurrentUser } from '../auth/decorators/auth.decorators';
+import { CurrentUser, Public } from '../auth/decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
 
 @Controller()
@@ -31,12 +31,14 @@ export class ReviewsController {
   }
 
   // GET /artists/:id/reviews — visible reviews for an artist (public)
+  @Public()
   @Get('artists/:id/reviews')
   getForArtist(@Param('id', ParseUUIDPipe) artistUserId: string) {
     return this.reviewsService.getForArtist(artistUserId);
   }
 
   // GET /planners/:id/reviews — visible reviews for a planner (public)
+  @Public()
   @Get('planners/:id/reviews')
   getForPlanner(@Param('id', ParseUUIDPipe) plannerUserId: string) {
     return this.reviewsService.getForPlanner(plannerUserId);

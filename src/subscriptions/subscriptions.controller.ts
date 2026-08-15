@@ -11,7 +11,7 @@ import {
 import { SubscriptionsService } from './subscriptions.service';
 import { CreatePaymentIntentDto, ReportTransferDto } from './dto/subscriptions.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
-import { CurrentUser, Roles } from '../auth/decorators/auth.decorators';
+import { CurrentUser, Public, Roles } from '../auth/decorators/auth.decorators';
 
 @Controller()
 export class SubscriptionsController {
@@ -21,6 +21,7 @@ export class SubscriptionsController {
   //
   // Deliberately unguarded. The pricing page is the main thing a guest is
   // sent to from a locked profile, so it has to render before sign-in.
+  @Public()
   @Get('subscriptions/plans')
   listPlans() {
     return this.subscriptionsService.listPlans();

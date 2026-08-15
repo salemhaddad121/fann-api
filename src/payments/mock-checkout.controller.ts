@@ -15,6 +15,7 @@ import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { MockProvider, MOCK_SIGNATURE_HEADER } from './providers/mock.provider';
 import { WebhooksService } from './webhooks.service';
+import { Public } from '../auth/decorators/auth.decorators';
 
 /**
  * Stand-in for a provider's hosted checkout page. DEV ONLY.
@@ -29,6 +30,7 @@ import { WebhooksService } from './webhooks.service';
  * subscriptions on an environment running a real provider.
  */
 @Controller('payments/mock')
+@Public()
 export class MockCheckoutController {
   constructor(
     @InjectConnection() private readonly db: Knex,

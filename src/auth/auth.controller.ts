@@ -34,7 +34,7 @@ import {
   VerifyOtpDto,
 } from './dto/auth.dto';
 import { JwtAuthGuard, LocalAuthGuard } from './guards/auth.guards';
-import { CurrentUser } from './decorators/auth.decorators';
+import { CurrentUser, Public } from './decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
 import {
   setAuthCookies,
@@ -50,6 +50,7 @@ export class AuthController {
   // ----------------------------------------------------------------
   // POST /auth/register
   // ----------------------------------------------------------------
+  @Public()
   @Post('register')
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -68,6 +69,7 @@ export class AuthController {
   // POST /auth/login
   // LocalAuthGuard runs validateLocalUser before the handler is reached.
   // ----------------------------------------------------------------
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard, LocalAuthGuard)
@@ -84,6 +86,7 @@ export class AuthController {
   // ----------------------------------------------------------------
   // POST /auth/refresh
   // ----------------------------------------------------------------
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
@@ -120,6 +123,7 @@ export class AuthController {
   // ----------------------------------------------------------------
   // GET /auth/verify-email?token=...
   // ----------------------------------------------------------------
+  @Public()
   @Get('verify-email')
   async verifyEmail(@Query('token') token: string) {
     return this.authService.verifyEmail(token);
@@ -130,6 +134,7 @@ export class AuthController {
   // Always returns a generic success message regardless of whether
   // the email exists — avoids leaking account existence.
   // ----------------------------------------------------------------
+  @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
@@ -141,6 +146,7 @@ export class AuthController {
   // ----------------------------------------------------------------
   // POST /auth/reset-password
   // ----------------------------------------------------------------
+  @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @UseGuards(ThrottlerGuard)
@@ -221,12 +227,14 @@ export class AuthController {
   // Initiates Google OAuth flow. `state` carries the role the user
   // signed up as so the callback knows which profile to create.
   // ----------------------------------------------------------------
+  @Public()
   @Get('google')
   @UseGuards(GoogleConfiguredGuard, AuthGuard('google'))
   googleLogin() {
     // Passport redirects automatically — no body needed.
   }
 
+  @Public()
   @Get('google/callback')
   @UseGuards(GoogleConfiguredGuard, AuthGuard('google'))
   async googleCallback(@Req() req: Request, @Res() res: Response) {
@@ -243,10 +251,12 @@ export class AuthController {
   // GET /auth/apple?state=artist|planner
   // Apple uses a POST callback (form_post response mode)
   // ----------------------------------------------------------------
+  @Public()
   @Get('apple')
   @UseGuards(AppleConfiguredGuard, AuthGuard('apple'))
   appleLogin() {}
 
+  @Public()
   @Post('apple/callback')
   @UseGuards(AppleConfiguredGuard, AuthGuard('apple'))
   async appleCallback(@Req() req: Request, @Res() res: Response) {

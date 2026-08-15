@@ -1,6 +1,6 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_PIPE } from '@nestjs/core';
+import { APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { KnexModule } from 'nest-knexjs';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule }         from './auth/auth.module';
@@ -20,6 +20,7 @@ import { SchedulerModule }    from './scheduler/scheduler.module';
 import { SavedModule }        from './saved/saved.module';
 import { AnalyticsModule }    from './analytics/analytics.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { JwtAuthGuard } from './auth/guards/auth.guards';
 import { SupportModule } from './support/support.module';
 import { PaymentsModule } from './payments/payments.module';
 
@@ -86,6 +87,14 @@ import { PaymentsModule } from './payments/payments.module';
     PaymentsModule,
   ],
   providers: [
+    // Default-deny authentication. Every route requires a session unless
+    // marked @Public(). Runs before route-level guards, so a @Public()
+    // route carrying OptionalJwtAuthGuard still gets its session resolved.
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+
     // Global validation pipe — applies to every route automatically
     {
       provide: APP_PIPE,
