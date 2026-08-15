@@ -22,6 +22,53 @@ export interface MaintenanceNotification {
 }
 
 /**
+ * The pooled pg connection, reached through Knex's client.
+ *
+ * Knex has no public API for "give me one connection and let me keep it",
+ * which is what a session-scoped advisory lock requires — so these two
+ * methods are typed here rather than cast away at the call site. They have
+ * been stable across Knex 2 and 3 and are the documented escape hatch for
+ * exactly this case. `query` is node-postgres', not Knex's.
+ */
+interface PoolConnection {
+  query(
+    sql: string,
+    params: unknown[],
+  ): Promise<{ rows?: { acquired?: boolean }[] } | undefined>;
+}
+
+interface KnexPoolClient {
+  acquireConnection(): Promise<PoolConnection>;
+  releaseConnection(conn: PoolConnection): Promise<void>;
+}
+
+/**
+ * Namespace for every advisory lock this app takes, so a key collision with
+ * anything else sharing the database is not possible. Postgres advisory
+ * locks are a single global space keyed by two int4s — the first is ours.
+ * 0x66616e6e spells "fann" and fits a signed int4.
+ */
+const CRON_LOCK_NAMESPACE = 0x66616e6e;
+
+/**
+ * Stable int4 key for a job name, so every instance derives the same lock
+ * from the same string without a registry of hand-assigned numbers.
+ *
+ * FNV-1a, folded to signed 32-bit because that is what pg_try_advisory_lock
+ * takes. Collisions across a handful of job names are not a practical
+ * concern, and the cost of one would be two jobs taking turns rather than
+ * anything incorrect.
+ */
+export function cronLockKey(job: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < job.length; i++) {
+    hash ^= job.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash | 0;
+}
+
+/**
  * Works out what to tell people after an expiry-and-promotion sweep.
  *
  * When a queued plan is promoted in the same run that ended the previous
@@ -115,6 +162,76 @@ export class SchedulerService {
     private readonly identityDocuments: IdentityDocumentsService,
   ) {}
 
+  /**
+   * Runs a job only if no other instance is already running it.
+   *
+   * Today there is one instance and this never blocks anything. It exists
+   * because the failure it prevents is silent and expensive: scale the API
+   * to two instances under SCHEDULER_MODE=in-process and every @Cron fires
+   * on both at the same moment, which means renewal reminders sent twice,
+   * payment intents polled twice, and a queued subscription promoted twice.
+   * None of that raises an error — it just quietly happens to real people.
+   *
+   * Guards the HTTP path too, since the lock sits inside the run* methods
+   * that CronController calls rather than on the @Cron wrappers. Vercel Cron
+   * firing twice is protected by exactly the same mechanism.
+   *
+   * Three details that are easy to get wrong:
+   *
+   *  - The lock is SESSION-scoped (pg_try_advisory_lock), not transaction-
+   *    scoped. A transaction-scoped lock would mean wrapping each job in one
+   *    long transaction, and these jobs deliberately commit as they go — the
+   *    review trigger emails people mid-loop, and rolling that back after
+   *    the mail is sent makes a failure worse rather than atomic.
+   *
+   *  - It is taken on ONE connection held for the whole job. Session locks
+   *    belong to a connection, so acquiring on a pooled connection and
+   *    releasing on whichever one the pool hands back next would leak the
+   *    lock permanently and wedge the job forever.
+   *
+   *  - try_ rather than the blocking form. An instance that cannot get the
+   *    lock should skip this run — the job is on a schedule and will come
+   *    round again. Blocking would pile up workers waiting on a job another
+   *    instance is already doing.
+   */
+  private async withCronLock(job: string, work: () => Promise<void>): Promise<void> {
+    const pool = (this.db as unknown as { client: KnexPoolClient }).client;
+    const key = cronLockKey(job);
+
+    let conn: PoolConnection;
+    try {
+      conn = await pool.acquireConnection();
+    } catch (err) {
+      this.logger.error(`[Scheduler] Could not get a connection to lock ${job}`, err);
+      return;
+    }
+
+    try {
+      const result = await conn.query(
+        'SELECT pg_try_advisory_lock($1, $2) AS acquired',
+        [CRON_LOCK_NAMESPACE, key],
+      );
+
+      if (result?.rows?.[0]?.acquired !== true) {
+        this.logger.log(`[Scheduler] ${job} is already running elsewhere; skipping this run.`);
+        return;
+      }
+
+      try {
+        await work();
+      } finally {
+        // In a finally so a throwing job cannot strand the lock. The job
+        // bodies all catch their own errors, but that is their choice to
+        // change, not something this should depend on.
+        await conn.query('SELECT pg_advisory_unlock($1, $2)', [CRON_LOCK_NAMESPACE, key]);
+      }
+    } catch (err) {
+      this.logger.error(`[Scheduler] Locking failed for ${job}`, err);
+    } finally {
+      await pool.releaseConnection(conn);
+    }
+  }
+
   // ----------------------------------------------------------------
   // Hourly, not daily. A day pass activated at 14:20 runs out at 14:20 the
   // next day, so a once-a-day sweep would leave a queued plan waiting up to
@@ -132,6 +249,12 @@ export class SchedulerService {
   }
 
   async runSubscriptionMaintenance() {
+    await this.withCronLock('subscription-maintenance', () =>
+      this.doSubscriptionMaintenance(),
+    );
+  }
+
+  private async doSubscriptionMaintenance() {
     try {
       const { expired, promoted } = await this.subscriptionsService.expireAndPromote();
 
@@ -167,6 +290,10 @@ export class SchedulerService {
   }
 
   async runRenewalReminders() {
+    await this.withCronLock('renewal-reminders', () => this.doRenewalReminders());
+  }
+
+  private async doRenewalReminders() {
     try {
       const due = await this.subscriptionsService.findDueRenewalReminders();
       if (due.length === 0) return;
@@ -236,6 +363,12 @@ export class SchedulerService {
   }
 
   async runPaymentReconciliation() {
+    await this.withCronLock('payment-reconciliation', () =>
+      this.doPaymentReconciliation(),
+    );
+  }
+
+  private async doPaymentReconciliation() {
     try {
       const expired = await this.db('payments')
         .where('status', 'awaiting_provider')
@@ -318,6 +451,12 @@ export class SchedulerService {
   }
 
   async runIdentityDocumentRetention() {
+    await this.withCronLock('identity-document-retention', () =>
+      this.doIdentityDocumentRetention(),
+    );
+  }
+
+  private async doIdentityDocumentRetention() {
     try {
       const { purged, failed } = await this.identityDocuments.pruneExpiredDocuments();
 
@@ -365,6 +504,10 @@ export class SchedulerService {
   // CronController when Vercel Cron drives it over HTTP — the gate lives on
   // the wrapper only, so the HTTP path is never short-circuited by it.
   async runDailyReviewTrigger() {
+    await this.withCronLock('daily-review-trigger', () => this.doDailyReviewTrigger());
+  }
+
+  private async doDailyReviewTrigger() {
     this.logger.log('[Scheduler] Daily review trigger started');
 
     try {
@@ -397,6 +540,10 @@ export class SchedulerService {
   }
 
   async runExpiredReviewUnlock() {
+    await this.withCronLock('expired-review-unlock', () => this.doExpiredReviewUnlock());
+  }
+
+  private async doExpiredReviewUnlock() {
     this.logger.log('[Scheduler] Expired review unlock started');
 
     try {
@@ -422,6 +569,10 @@ export class SchedulerService {
   }
 
   async runTelemetryPrune() {
+    await this.withCronLock('telemetry-prune', () => this.doTelemetryPrune());
+  }
+
+  private async doTelemetryPrune() {
     try {
       const deleted = await this.analyticsService.pruneOldEvents();
       if (deleted > 0) {

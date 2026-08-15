@@ -78,5 +78,33 @@ export function createMockDb(tableBuilders: Record<string, any> = {}) {
   db.fn = { now: jest.fn(() => "NOW()") };
   db.raw = jest.fn((sql: string) => sql);
   db.transaction = jest.fn(async (cb: (trx: any) => Promise<any>) => cb(db));
+
+  // Knex's connection pool, used by SchedulerService.withCronLock() to hold
+  // one connection for the life of a session-scoped advisory lock. Defaults
+  // to granting the lock, so a test that does not care about locking gets
+  // the job running without setting anything up; pass `false` to
+  // createMockConnection() to simulate another instance holding it.
+  db.__conn = createMockConnection(true);
+  db.client = {
+    acquireConnection: jest.fn(async () => db.__conn),
+    releaseConnection: jest.fn(async () => undefined),
+  };
+
   return db;
+}
+
+/**
+ * A pg connection that answers pg_try_advisory_lock with `acquired`.
+ *
+ * Attach with `db.__conn = createMockConnection(false)` and
+ * `db.client.acquireConnection.mockResolvedValue(db.__conn)` to test the
+ * path where a second instance is already running the job.
+ */
+export function createMockConnection(acquired = true) {
+  return {
+    query: jest.fn(async (sql: string) => {
+      if (sql.includes("pg_try_advisory_lock")) return { rows: [{ acquired }] };
+      return { rows: [] };
+    }),
+  };
 }
