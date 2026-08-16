@@ -16,6 +16,7 @@ import {
   Min,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { MAX_PAGE, MAX_PAGE_SIZE } from '../../common/pagination.constants';
 
 // ----------------------------------------------------------------
 // Search / list query
@@ -71,17 +72,20 @@ export class SearchArtistsDto {
   @IsIn(['price_asc', 'price_desc', 'newest'])
   sort?: 'price_asc' | 'price_desc' | 'newest';
 
+  // Capped, not just floored. An unbounded page number turns into an
+  // unbounded OFFSET, which Postgres will happily scan through.
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  @Max(MAX_PAGE)
   page?: number = 1;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(1)
-  @Max(50)
+  @Max(MAX_PAGE_SIZE)
   limit?: number = 20;
 }
 

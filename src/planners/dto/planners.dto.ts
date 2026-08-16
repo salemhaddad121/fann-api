@@ -10,6 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { MAX_PAGE, MAX_PAGE_SIZE } from '../../common/pagination.constants';
 
 // The fixed set of booker types (Postgres enum `booker_type`). One per booker.
 export const BOOKER_TYPES = [
@@ -97,16 +98,18 @@ export class SearchPlannersDto {
   @IsIn(['newest', 'name_asc'])
   sort?: 'newest' | 'name_asc';
 
+  // Capped, not just floored — see the artists DTO.
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(1)
+  @Max(MAX_PAGE)
   page?: number = 1;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(1)
-  @Max(50)
+  @Max(MAX_PAGE_SIZE)
   limit?: number = 20;
 }
