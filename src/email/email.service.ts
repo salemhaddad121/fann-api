@@ -23,13 +23,12 @@ export class EmailService {
   // ----------------------------------------------------------------
   async send({ to, subject, html }: SendEmailInput): Promise<void> {
     const apiKey = this.configService.get<string>('RESEND_API_KEY');
-    // admin@fann-leb.com — a real, monitored mailbox rather than a noreply.
-    //
-    // Deliberately not noreply@: a reply to a password reset or a booking
-    // notification is a person trying to reach Fann, and dropping it on the
-    // floor to preserve a convention is worse than reading it. The same
-    // address is the support inbox (SUPPORT_INBOX_EMAIL falls through to
-    // EMAIL_FROM), so replies land where tickets already do.
+    // Outbound machine mail sends as noreply@; anything a human should read
+    // goes to admin@. Both are real mailboxes on fann-leb.com, so a reply to
+    // a password reset is received rather than bounced — it is simply not
+    // the address support is run from. SupportService pins its inbox to
+    // admin@ explicitly rather than inheriting this value, which is what
+    // stops tickets landing in the noreply mailbox.
     //
     // ⚠️ Sending from this domain does not work until it is verified in
     // Resend. As of 2026-08-16 fann-leb.com has an MX record pointing at
@@ -38,7 +37,7 @@ export class EmailService {
     // inbox is not the same thing as a verified sending domain.
     //
     // This is only the fallback; EMAIL_FROM set per environment overrides it.
-    const from   = this.configService.get<string>('EMAIL_FROM') ?? 'admin@fann-leb.com';
+    const from   = this.configService.get<string>('EMAIL_FROM') ?? 'noreply@fann-leb.com';
 
     if (!apiKey) {
       // No provider configured yet (e.g. local dev) — log instead of failing silently.
