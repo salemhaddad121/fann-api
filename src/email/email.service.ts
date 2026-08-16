@@ -23,15 +23,22 @@ export class EmailService {
   // ----------------------------------------------------------------
   async send({ to, subject, html }: SendEmailInput): Promise<void> {
     const apiKey = this.configService.get<string>('RESEND_API_KEY');
-    // fann-leb.com is the primary domain. The previous fallback was
-    // noreply@fann.app — a domain Fann has never owned, so anything that
-    // reached this line was sending from an address with no SPF, DKIM or
-    // DMARC behind it and was being rejected or spam-filed.
+    // admin@fann-leb.com — a real, monitored mailbox rather than a noreply.
     //
-    // ⚠️ This is only the fallback. EMAIL_FROM, set per environment, is what
-    // production actually sends as, and the sending domain has to be
-    // verified in Resend before either address delivers.
-    const from   = this.configService.get<string>('EMAIL_FROM') ?? 'noreply@fann-leb.com';
+    // Deliberately not noreply@: a reply to a password reset or a booking
+    // notification is a person trying to reach Fann, and dropping it on the
+    // floor to preserve a convention is worse than reading it. The same
+    // address is the support inbox (SUPPORT_INBOX_EMAIL falls through to
+    // EMAIL_FROM), so replies land where tickets already do.
+    //
+    // ⚠️ Sending from this domain does not work until it is verified in
+    // Resend. As of 2026-08-16 fann-leb.com has an MX record pointing at
+    // Google — so it RECEIVES — but no SPF, no DKIM and no DMARC, so it
+    // cannot yet SEND. Resend rejects unverified domains outright. A working
+    // inbox is not the same thing as a verified sending domain.
+    //
+    // This is only the fallback; EMAIL_FROM set per environment overrides it.
+    const from   = this.configService.get<string>('EMAIL_FROM') ?? 'admin@fann-leb.com';
 
     if (!apiKey) {
       // No provider configured yet (e.g. local dev) — log instead of failing silently.
