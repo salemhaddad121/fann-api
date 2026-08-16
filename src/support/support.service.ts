@@ -28,16 +28,18 @@ export class SupportService {
   /**
    * Where new-ticket notifications go.
    *
-   * Config, not a constant, because the address has not been decided yet.
-   * When it is, it becomes an env var and nothing here changes. Falling
-   * back to EMAIL_FROM rather than to nothing means a ticket raised before
-   * the variable is set still reaches a real inbox instead of vanishing.
+   * ⚠️ Deliberately no longer falls back to EMAIL_FROM. That made sense
+   * while both were the same address, but outbound mail now sends as
+   * noreply@fann-leb.com — so inheriting it would quietly deliver every
+   * support ticket to a mailbox named noreply, which is precisely where
+   * nobody looks. The fallback is the human inbox instead.
+   *
+   * `||` rather than `??` on purpose: an env var present but set to an
+   * empty string is the likely misconfiguration here, and `??` would pass
+   * the empty string straight through as a recipient.
    */
-  private get supportInbox(): string | undefined {
-    return (
-      this.configService.get<string>('SUPPORT_INBOX_EMAIL') ??
-      this.configService.get<string>('EMAIL_FROM')
-    );
+  private get supportInbox(): string {
+    return this.configService.get<string>('SUPPORT_INBOX_EMAIL')?.trim() || 'admin@fann-leb.com';
   }
 
   async create(
@@ -100,13 +102,9 @@ export class SupportService {
     dto: CreateSupportTicketDto,
     replyTo?: string,
   ): Promise<void> {
+    // No "not configured" branch any more: supportInbox always resolves to
+    // a real address, so the old warning could never fire.
     const inbox = this.supportInbox;
-    if (!inbox) {
-      this.logger.warn(
-        `[Support] No SUPPORT_INBOX_EMAIL configured — ticket ${ticketId} saved but not emailed.`,
-      );
-      return;
-    }
 
     try {
       await this.emailService.sendSupportTicketEmail({
