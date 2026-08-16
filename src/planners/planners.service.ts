@@ -43,11 +43,19 @@ export class PlannersService {
     }
 
     // Matches ANY planner whose event_types overlaps the requested list.
-    // event_types is a JSONB array of strings (e.g. ["Wedding","Corporate"]);
-    // ?| checks whether any of the given text[] values appear as elements.
-    // Note: "?" is doubled to escape it from knex's own placeholder parsing.
+    // event_types is a JSONB array of strings (e.g. ["Wedding","Corporate"]).
+    //
+    // This is the `?|` operator, written in its function form on purpose.
+    // Knex reads "?" in a raw string as a value placeholder and "??" as an
+    // identifier placeholder, so there is no spelling of the operator that
+    // knex will leave alone — the previous "??|" was parsed as an identifier
+    // binding plus the real one, which made every filtered request fail with
+    // "Expected 1 bindings, saw 2". jsonb_exists_any is the same operator
+    // with no punctuation for knex to claim.
     if (dto.eventTypes?.length) {
-      query = query.whereRaw(`pp.event_types ??| ?::text[]`, [dto.eventTypes]);
+      query = query.whereRaw(`jsonb_exists_any(pp.event_types, ?::text[])`, [
+        dto.eventTypes,
+      ]);
     }
 
     if (dto.country) {
