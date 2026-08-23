@@ -54,20 +54,24 @@ export class ArtistsService {
         );
       } else {
         // Masking is only as strong as what cannot be probed around it. A
-        // substring match on the full name lets a viewer type "Nassar",
-        // see a hit, and confirm the surname the response deliberately
-        // shortened to "N." — one guess at a time, but a confirmed guess
+        // match on any part of the name lets a viewer type a guess, see a
+        // hit, and confirm it — one guess at a time, but a confirmed guess
         // all the same.
         //
-        // So below the paying tier the name is matched only on its FIRST
-        // WORD, which is exactly the part already shown. Searching "Karim"
-        // still finds Karim N.; searching "Nassar" finds nothing. Bio stays
-        // a full substring match because the bio is public in its entirety
-        // — matching it reveals nothing the viewer cannot already read.
-        query = query.whereRaw(
-          `(split_part(ap.display_name, ' ', 1) ILIKE ? OR ap.bio ILIKE ?)`,
-          [`${dto.q}%`, `%${dto.q}%`],
-        );
+        // This used to match the first word, which was safe precisely
+        // because the first word was the part already shown. Since
+        // 2026-08-23 a non-member sees no name at all, so that exemption
+        // died with it: the name is not matched here in any form.
+        //
+        // The cost is real and worth stating — a guest searching an artist
+        // by name will not find them unless the name also appears in the
+        // bio. That is the direct price of hiding the name, not an
+        // oversight. Categories, city and event type still filter normally,
+        // and those are what a booker actually searches by.
+        //
+        // Bio stays a full substring match because the bio is public in its
+        // entirety — matching it reveals nothing the viewer cannot read.
+        query = query.whereRaw(`(ap.bio ILIKE ?)`, [`%${dto.q}%`]);
       }
     }
 
