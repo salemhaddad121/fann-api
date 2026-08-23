@@ -110,7 +110,7 @@ describe('ArtistsService.search() — column selection', () => {
 });
 
 describe('ArtistsService.search() — shaping the response', () => {
-  it('masks the name and replaces the price with a band for a guest', async () => {
+  it('removes the name and replaces the price with a band for a guest', async () => {
     const db = searchDb();
     const result = await new ArtistsService(db, analyticsStub() as any).search(
       {} as any,
@@ -118,7 +118,7 @@ describe('ArtistsService.search() — shaping the response', () => {
     );
 
     const artist = fields(result.data[0]);
-    expect(artist.display_name).toBe('Karim N.');
+    expect(artist).not.toHaveProperty('display_name');
     expect(artist.base_price_band).toBe('$250–$500');
     expect(artist).not.toHaveProperty('base_price_usd');
     expect(artist).not.toHaveProperty('social_links');
@@ -175,16 +175,21 @@ describe('ArtistsService.search() — shaping the response', () => {
 });
 
 describe('ArtistsService.search() — probing defences', () => {
-  it('matches a masked name on its first word only', async () => {
-    // Otherwise the mask is decoration: type "Nassar", see a hit, and the
-    // surname the response shortened to "N." is confirmed.
+  it('never matches the name for a non-member', async () => {
+    // The first-word match was safe only while the first word was visible.
+    // Now that no part of the name is shown, matching any part of it is a
+    // probe: type a guess, see a hit, and the guess is confirmed.
     const db = searchDb();
     await new ArtistsService(db, analyticsStub() as any).search(
       { q: 'Nassar' } as any,
       {},
     );
 
-    expect(rawClauses(db)).toContain('split_part');
+    const raw = rawClauses(db);
+    expect(raw).not.toContain('display_name');
+    expect(raw).not.toContain('split_part');
+    // The bio is public in full, so matching it reveals nothing new.
+    expect(raw).toContain('ap.bio ILIKE');
   });
 
   it('matches the full name for a subscriber', async () => {
@@ -295,14 +300,15 @@ describe('ArtistsService.findOne()', () => {
     expect(fields(result).viewer_tier).toBe('subscribed');
   });
 
-  it('masks for an unrelated guest', async () => {
+  it('withholds the name entirely from an unrelated guest', async () => {
     const db = profileDb();
     const result = await new ArtistsService(db, analyticsStub() as any).findOne(
       'ap-1',
       {},
     );
 
-    expect(fields(result).display_name).toBe('Karim N.');
+    expect(fields(result)).not.toHaveProperty('display_name');
+    expect(JSON.stringify(result)).not.toContain('Karim');
     expect(result).not.toHaveProperty('base_price_usd');
   });
 

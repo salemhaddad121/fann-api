@@ -67,13 +67,20 @@ describe('profileColumnsFor()', () => {
     }
   });
 
-  it('still reads the two columns it has to transform', () => {
-    // The name has to be read to be masked, and the band cannot be computed
-    // without the figure. shapeArtistProfile() is what stops either raw
-    // value reaching the response.
-    const columns = profileColumnsFor('guest');
+  it('still reads the price it has to transform', () => {
+    // The band cannot be computed without the figure, so the column is read
+    // and then dropped. shapeArtistProfile() is what stops the raw value
+    // reaching the response.
+    expect(profileColumnsFor('guest')).toContain('ap.base_price_usd');
+  });
 
-    expect(columns).toEqual(expect.arrayContaining(['ap.display_name', 'ap.base_price_usd']));
+  it('does not read the name at all below the paying tier', () => {
+    // Nothing is derived from the name any more, so the strongest version
+    // of "a non-member sees no name" is the one where it never leaves the
+    // database.
+    expect(profileColumnsFor('guest')).not.toContain('ap.display_name');
+    expect(profileColumnsFor('registered')).not.toContain('ap.display_name');
+    expect(profileColumnsFor('subscribed')).toContain('ap.display_name');
   });
 
   it('never selects the whole table', () => {
@@ -94,12 +101,13 @@ describe('shapeArtistProfile()', () => {
     },
   );
 
-  it('masks the display name rather than removing it', () => {
-    // A guest still needs to tell two results apart; they just must not be
-    // able to look the artist up and book around the platform.
+  it('removes the display name entirely', () => {
+    // No part of it, not even the first word. The client draws a blurred
+    // placeholder over nothing rather than over a real value.
     const shaped = shapeArtistProfile(fullRow(), 'guest');
 
-    expect(shaped.display_name).toBe('Karim N.');
+    expect(shaped).not.toHaveProperty('display_name');
+    expect(JSON.stringify(shaped)).not.toContain('Karim');
     expect(JSON.stringify(shaped)).not.toContain('Nassar');
   });
 

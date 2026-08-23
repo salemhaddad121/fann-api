@@ -1,6 +1,5 @@
 import { Knex } from 'knex';
 import { hasActiveSubscription } from '../common/subscription.util';
-import { maskDisplayName } from '../common/mask-name.util';
 
 /**
  * Who is looking, and therefore how much of an artist profile they get.
@@ -52,12 +51,16 @@ const PUBLIC_COLUMNS = [
 
 /**
  * Fetched for everyone, but transformed before it leaves the server:
- * display_name is masked, base_price_usd becomes a band and is then
- * dropped. They have to be read to be transformed — the band cannot be
- * computed without the figure — so shapeArtistProfile() is what guarantees
- * neither raw value reaches the response.
+ * base_price_usd becomes a band and is then dropped. It has to be read to be
+ * transformed — the band cannot be computed without the figure — so
+ * shapeArtistProfile() is what guarantees the raw value never reaches the
+ * response.
+ *
+ * display_name used to live here, back when a non-payer saw a shortened form
+ * of it. It does not any more: nothing is derived from the name, so there is
+ * no reason to read it.
  */
-const DERIVED_SOURCE_COLUMNS = ['ap.display_name', 'ap.base_price_usd'];
+const DERIVED_SOURCE_COLUMNS = ['ap.base_price_usd'];
 
 /**
  * Never fetched at all below the paying tier.
@@ -66,8 +69,14 @@ const DERIVED_SOURCE_COLUMNS = ['ap.display_name', 'ap.base_price_usd'];
  * `SELECT ap.*` shipped social_links, the exact price and the real name to
  * anonymous callers, and would have shipped every column added later too. A
  * new column now stays private until someone deliberately adds it here.
+ *
+ * display_name joined this list on 2026-08-23. It was previously fetched and
+ * shortened to "Karim N."; Salem's call is that a non-member sees no name at
+ * all, so the strongest version of that is the one where the name is never
+ * read out of the database. The client draws a blurred placeholder over
+ * nothing — see LockedField on the web side.
  */
-const SUBSCRIBER_ONLY_COLUMNS = ['ap.social_links'];
+const SUBSCRIBER_ONLY_COLUMNS = ['ap.social_links', 'ap.display_name'];
 
 export function profileColumnsFor(tier: ViewerTier): string[] {
   const columns = [...PUBLIC_COLUMNS, ...DERIVED_SOURCE_COLUMNS];
@@ -175,7 +184,11 @@ export function shapeArtistProfile<T extends Record<string, unknown>>(
     return shaped;
   }
 
-  shaped.display_name = maskDisplayName(row.display_name as string);
+  // Deleted, not blanked. The column is no longer selected below the paying
+  // tier so it should not be here at all — this is the belt to that braces,
+  // and it keeps the guarantee true for any caller that assembles a row from
+  // somewhere other than profileColumnsFor().
+  delete shaped.display_name;
   shaped.is_masked = true;
 
   // A band, not the figure. Computed here from the value we fetched and
