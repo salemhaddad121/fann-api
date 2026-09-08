@@ -48,6 +48,10 @@ export class VerificationService {
         consents.map((c) => ({
           document: c.document,
           version: c.version,
+          // Included since 021: without it a withdrawal and a grant look
+          // identical in the snapshot, and an optional consent that was
+          // later revoked would read as though it still stood.
+          granted: c.granted,
           accepted_at: c.accepted_at,
           ip_address: c.ip_address,
         })),

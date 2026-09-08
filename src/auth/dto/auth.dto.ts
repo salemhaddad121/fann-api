@@ -1,5 +1,6 @@
 import {
   Equals,
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -9,6 +10,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { UserRole } from '../../users/users.types';
+import { StrictBoolean } from '../../common/boolean.transform';
 
 // ----------------------------------------------------------------
 // Register
@@ -38,11 +40,27 @@ export class RegisterDto {
   // accept `false`, which is the one value that must not get through —
   // Equals(true) is what makes the checkbox mandatory server-side rather
   // than only in the browser.
+  //
+  // @StrictBoolean is what makes that true in practice. Without it the
+  // global pipe's implicit conversion turned the string "false" into `true`
+  // before @Equals ever ran, so a request that explicitly refused the Terms
+  // created an account AND recorded consent to them. See boolean.transform.ts.
+  @StrictBoolean()
   @Equals(true, { message: 'You must accept the Terms of Service to sign up.' })
   acceptedTerms: boolean;
 
+  @StrictBoolean()
   @Equals(true, { message: 'You must accept the Privacy Policy to sign up.' })
   acceptedPrivacy: boolean;
+
+  // Optional, and deliberately NOT @Equals(true). §24.2 requires marketing
+  // consent to be separable from accepting the Terms, which means signing
+  // up having refused it has to work. Absent reads as false: someone who
+  // was never asked has not agreed to anything.
+  @IsOptional()
+  @StrictBoolean()
+  @IsBoolean({ message: 'acceptedMarketing must be true or false.' })
+  acceptedMarketing?: boolean;
 }
 
 // ----------------------------------------------------------------
