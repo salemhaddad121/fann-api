@@ -17,6 +17,7 @@ import {
   RespondBookingDto,
 } from './dto/bookings.dto';
 import { JwtAuthGuard, RolesGuard } from '../auth/guards/auth.guards';
+import { RequiresSubscription, SubscriptionGuard } from '../common/subscription.guard';
 import { CurrentUser, Roles } from '../auth/decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
 
@@ -41,9 +42,14 @@ export class BookingsController {
   }
 
   // POST /bookings — planner proposes a booking
+  //
+  // Behind Paid Access alongside messaging. Requesting a booking is the
+  // other half of making contact, so leaving it open would let a free
+  // account route around the messaging gate to reach the same artist.
   @Post()
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SubscriptionGuard)
   @Roles('planner')
+  @RequiresSubscription('planner')
   create(
     @CurrentUser() user: UserRecord,
     @Body() dto: CreateBookingDto,

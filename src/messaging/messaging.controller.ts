@@ -20,6 +20,7 @@ import {
   SendMessageDto,
 } from './dto/messaging.dto';
 import { JwtAuthGuard } from '../auth/guards/auth.guards';
+import { RequiresSubscription, SubscriptionGuard } from '../common/subscription.guard';
 import { CurrentUser } from '../auth/decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
 
@@ -37,7 +38,13 @@ export class MessagingController {
   // POST /conversations
   // Planners send artistId and get an open thread. Artists send plannerId
   // and get a pending request the planner has to accept.
+  //
+  // Paid Access is what buys a planner the right to open that thread —
+  // T&C §13.4. Artists pass straight through: sending a request to a
+  // planner is them using their own inbox, not something they bought.
   @Post()
+  @UseGuards(SubscriptionGuard)
+  @RequiresSubscription('planner')
   create(
     @CurrentUser() user: UserRecord,
     @Body() dto: CreateConversationDto,
@@ -77,7 +84,14 @@ export class MessagingController {
   }
 
   // POST /conversations/:id/messages
+  //
+  // Gated in addition to the create route, not instead of it: a plan that
+  // lapses mid-thread has to stop the planner writing, or one $5 day pass
+  // buys a permanent line to every artist they ever opened a thread with.
+  // Reading is deliberately left open — GET carries no guard.
   @Post(':id/messages')
+  @UseGuards(SubscriptionGuard)
+  @RequiresSubscription('planner')
   sendMessage(
     @CurrentUser() user: UserRecord,
     @Param('id', ParseUUIDPipe) conversationId: string,
