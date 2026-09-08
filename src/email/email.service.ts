@@ -30,11 +30,24 @@ export class EmailService {
     // admin@ explicitly rather than inheriting this value, which is what
     // stops tickets landing in the noreply mailbox.
     //
-    // ⚠️ Sending from this domain does not work until it is verified in
-    // Resend. As of 2026-08-16 fann-leb.com has an MX record pointing at
-    // Google — so it RECEIVES — but no SPF, no DKIM and no DMARC, so it
-    // cannot yet SEND. Resend rejects unverified domains outright. A working
-    // inbox is not the same thing as a verified sending domain.
+    // Sending is live. Checked against public DNS on 2026-09-08: DKIM is
+    // published at resend._domainkey.fann-leb.com, and Resend's MAIL FROM
+    // subdomain is in place — send.fann-leb.com carries SPF
+    // "include:amazonses.com" and MX feedback-smtp.eu-west-1.amazonses.com.
+    // The apex still points at Google, which is what receives.
+    //
+    // This replaces an earlier note here stating the domain had no SPF, no
+    // DKIM and could not send. That was true on 2026-08-16 and is not any
+    // more — re-read the DNS before repeating either claim.
+    //
+    // ⚠️ Two DNS defects remain. Neither stops Resend delivering, so
+    // neither is visible from the app, which is exactly why they are written
+    // down here. The apex SPF is "v=spf1 include:_spf.google.com ~all." —
+    // the trailing dot makes "all." an unrecognised mechanism, so a strict
+    // evaluator returns permerror on anything sent as @fann-leb.com through
+    // Google. And there is no _dmarc record at all, so nothing tells a
+    // receiver what to do when a check fails, and the domain is trivially
+    // spoofable. Both are DNS-side fixes; see GO-LIVE-BLOCKERS.md.
     //
     // This is only the fallback; EMAIL_FROM set per environment overrides it.
     const from   = this.configService.get<string>('EMAIL_FROM') ?? 'noreply@fann-leb.com';
