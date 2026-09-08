@@ -25,6 +25,7 @@ function makeUser(overrides: Partial<UserRecord> = {}): UserRecord {
 
 function makeService() {
   const usersService = {
+    create: jest.fn(),
     findById: jest.fn(),
     findByEmail: jest.fn(),
     setPendingEmail: jest.fn(),
@@ -64,6 +65,72 @@ function makeService() {
 }
 
 describe('AuthService', () => {
+  describe('register()', () => {
+    function registerDto(overrides: Record<string, unknown> = {}) {
+      return {
+        email: 'new@example.com',
+        password: 'Fann@dev2025',
+        role: 'planner' as const,
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+        ...overrides,
+      };
+    }
+
+    function setup() {
+      const harness = makeService();
+      harness.usersService.create.mockResolvedValue(makeUser({ id: 'new-user' }));
+      return harness;
+    }
+
+    it('records terms and privacy but not marketing when it was left alone', async () => {
+      // Absent must not become a granted=false row either: "declined" and
+      // "never asked" are different facts and §24.2 wants a positive act.
+      const { service, consentService } = setup();
+
+      await service.register(registerDto() as never);
+
+      expect(consentService.record).toHaveBeenCalledTimes(1);
+      expect(consentService.record.mock.calls[0][1]).toEqual(['terms', 'privacy']);
+    });
+
+    it('adds marketing to the same insert when it was ticked', async () => {
+      // One insert, not two — a signup must not be able to half-record
+      // consent.
+      const { service, consentService } = setup();
+
+      await service.register(registerDto({ acceptedMarketing: true }) as never);
+
+      expect(consentService.record).toHaveBeenCalledTimes(1);
+      expect(consentService.record.mock.calls[0][1]).toEqual([
+        'terms',
+        'privacy',
+        'marketing',
+      ]);
+    });
+
+    it('leaves marketing out when it was explicitly refused', async () => {
+      const { service, consentService } = setup();
+
+      await service.register(registerDto({ acceptedMarketing: false }) as never);
+
+      expect(consentService.record.mock.calls[0][1]).toEqual(['terms', 'privacy']);
+    });
+
+    it('snapshots the address from the form, not the created account', async () => {
+      // makeUser() returns current@example.com; the form said new@example.com.
+      // §3.4 wants the contact as at acceptance, and the account's address
+      // can change afterwards.
+      const { service, consentService } = setup();
+
+      await service.register(registerDto() as never);
+
+      expect(consentService.record.mock.calls[0][2]).toMatchObject({
+        contactEmail: 'new@example.com',
+      });
+    });
+  });
+
   describe('requestEmailChange()', () => {
     it('rejects an incorrect current password', async () => {
       const { service, usersService } = makeService();

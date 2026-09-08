@@ -117,3 +117,79 @@ describe('ResetPasswordDto', () => {
     expect(errors.some((e) => e.property === 'token')).toBe(true);
   });
 });
+
+// ----------------------------------------------------------------
+// Consent flags under the REAL pipe options.
+//
+// These deliberately pass `enableImplicitConversion: true` to match the
+// global ValidationPipe in app.module.ts. Without it plainToInstance leaves
+// strings alone and every case below passes for the wrong reason — the bug
+// these cover only exists because production converts.
+// ----------------------------------------------------------------
+describe('RegisterDto consent flags under implicit conversion', () => {
+  const PIPE_OPTS = { enableImplicitConversion: true };
+
+  function build(overrides: Record<string, unknown>) {
+    return plainToInstance(
+      RegisterDto,
+      {
+        email: 'artist@example.com',
+        password: 'Str0ngPass',
+        role: 'artist',
+        acceptedTerms: true,
+        acceptedPrivacy: true,
+        ...overrides,
+      },
+      PIPE_OPTS,
+    );
+  }
+
+  it('rejects the STRING "false" for the Terms', async () => {
+    // The regression that prompted StrictBoolean: implicit conversion made
+    // this `true`, so the account was created and a consent row was written
+    // saying the Terms were accepted by a request that denied them.
+    const errors = await validate(build({ acceptedTerms: 'false' }));
+
+    expect(errors.some((e) => e.property === 'acceptedTerms')).toBe(true);
+  });
+
+  it('rejects the STRING "false" for the Privacy Policy', async () => {
+    const errors = await validate(build({ acceptedPrivacy: 'false' }));
+
+    expect(errors.some((e) => e.property === 'acceptedPrivacy')).toBe(true);
+  });
+
+  it.each([['yes'], ['1'], ['on'], ['nonsense']])(
+    'rejects %p, rather than reading it as agreement',
+    async (value) => {
+      const errors = await validate(build({ acceptedTerms: value }));
+
+      expect(errors.some((e) => e.property === 'acceptedTerms')).toBe(true);
+    },
+  );
+
+  it('still accepts the canonical string "true", which form encodings send', async () => {
+    const errors = await validate(build({ acceptedTerms: 'true', acceptedPrivacy: 'true' }));
+
+    expect(errors).toHaveLength(0);
+  });
+
+  it('accepts a signup that declines marketing', async () => {
+    // §24.2: refusing marketing must not block the account.
+    const errors = await validate(build({ acceptedMarketing: false }));
+
+    expect(errors).toHaveLength(0);
+  });
+
+  it('accepts a signup that omits marketing entirely', async () => {
+    const errors = await validate(build({}));
+
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects a non-boolean marketing flag instead of guessing', async () => {
+    const errors = await validate(build({ acceptedMarketing: 'maybe' }));
+
+    expect(errors.some((e) => e.property === 'acceptedMarketing')).toBe(true);
+  });
+});

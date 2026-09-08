@@ -17,6 +17,7 @@ import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { RegisterDto } from './dto/auth.dto';
 import { UserRecord, UserRole } from '../users/users.types';
 import { ConsentService, ConsentContext } from '../consent/consent.service';
+import { ConsentDocument } from '../consent/consent.constants';
 import { VerificationService } from '../verification/verification.service';
 
 const BCRYPT_ROUNDS = 12;
@@ -51,9 +52,23 @@ export class AuthService {
 
     // Recorded before the verification email so a failure to send can't
     // leave an account whose consent went unrecorded. The DTO rejects
-    // anything but `true` on both, so reaching here means both were
-    // accepted.
-    await this.consentService.record(user.id, ['terms', 'privacy'], context);
+    // anything but `true` on terms and privacy, so reaching here means both
+    // were accepted.
+    //
+    // Marketing joins the same insert only when it was actually ticked.
+    // Writing a granted=false row for everyone who left it alone would
+    // collapse two different facts — "declined" and "never asked" — into
+    // one, and §24.2 wants a positive act, not the absence of one.
+    const documents: ConsentDocument[] = ['terms', 'privacy'];
+    if (dto.acceptedMarketing) documents.push('marketing');
+
+    // The address is snapshotted onto every row (§3.4). dto.email rather
+    // than user.email so it is the address they typed on this form, before
+    // any later change to the account.
+    await this.consentService.record(user.id, documents, {
+      ...context,
+      contactEmail: dto.email,
+    });
 
     // Opens the verification record while the request context is still
     // available. Consent is recorded first so the snapshot it copies is
