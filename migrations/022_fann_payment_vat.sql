@@ -36,7 +36,27 @@ ALTER TABLE payments
 
 UPDATE payments SET subtotal_usd = amount_usd WHERE subtotal_usd IS NULL;
 
-ALTER TABLE payments ALTER COLUMN subtotal_usd SET NOT NULL;
+-- subtotal_usd stays NULLABLE, on purpose, and this is the one decision in
+-- this file that is not about tax.
+--
+-- Migrations are applied to Neon BEFORE the code that uses them is deployed
+-- (see the deploy notes), so for the length of that window the CURRENTLY
+-- RUNNING code is writing these rows. That code does not know this column
+-- exists: createPaymentIntent inserts planner_id, plan_code, quantity,
+-- amount_usd, currency, provider, status, transfer_service, reference_code
+-- and nothing else. A NOT NULL column with no default would therefore make
+-- every POST /payments fail with a constraint violation from the moment
+-- this file is applied until the deploy lands — the same shape of outage as
+-- migration 015 on 2026-07-31, just triggered from the other direction.
+--
+-- A DEFAULT would avoid the crash and is worse: it would silently write a
+-- subtotal of 0 against a real amount, and a payment row that disagrees
+-- with itself is harder to notice than one with a hole in it.
+--
+-- So: expand now, contract later. Rows written during the window have
+-- subtotal_usd NULL, which is readable as "taken by pre-VAT code" and is
+-- true. Once the deploy is live and no such rows remain, a follow-up
+-- migration can add the NOT NULL.
 
 DO $$
 BEGIN
@@ -50,6 +70,6 @@ BEGIN
   END IF;
 END $$;
 
-COMMENT ON COLUMN payments.subtotal_usd IS 'Net of VAT: plan price x quantity.';
+COMMENT ON COLUMN payments.subtotal_usd IS 'Net of VAT: plan price x quantity. NULL only on rows written by pre-VAT code during the 022 deploy window.';
 COMMENT ON COLUMN payments.vat_rate IS 'The rate applied AT THE TIME of this payment. Never re-read from config for a past row.';
 COMMENT ON COLUMN payments.amount_usd IS 'GROSS total the buyer transfers: subtotal_usd + vat_usd.';
