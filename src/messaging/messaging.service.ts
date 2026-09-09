@@ -1,12 +1,18 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { aggregateValue } from '../common/db.util';
+import {
+  getActiveSubscription,
+  remainingMessages,
+} from '../common/subscription.util';
 import {
   CreateConversationDto,
   GetMessagesDto,
@@ -300,6 +306,45 @@ export class MessagingService {
   // ----------------------------------------------------------------
   // Send a message
   // ----------------------------------------------------------------
+  /**
+   * Enforces subscription_plans.message_cap.
+   *
+   * Lives here rather than in SubscriptionGuard because the guard answers
+   * "have they paid?" and this answers "how much did that buy?" — it needs
+   * the plan's cap and a count, which a route-level yes/no cannot express.
+   *
+   * Only plans with a cap are affected. An artist has no subscription at
+   * all, so getActiveSubscription returns undefined and they are never
+   * counted; a month or year plan has message_cap NULL and is uncapped.
+   *
+   * 402, matching SubscriptionGuard, because the fix is the same one — buy
+   * something. The MESSAGE differs from the guard's, and the frontend shows
+   * whatever the server says rather than assuming "your plan has ended":
+   * a spent day pass has not ended, it has been used up, and telling
+   * someone their live plan expired would send them to re-buy the wrong
+   * thing.
+   *
+   * The count and the insert are not in one transaction. Two sends racing
+   * can both pass a check at 14 of 15, so the cap is a soft ceiling that
+   * can be exceeded by one under concurrency. Locking the sender's message
+   * history on every send to prevent a 16th message on a $5 pass is not a
+   * trade worth making; if that ever matters, the fix is a counter column
+   * updated atomically, not a lock here.
+   */
+  private async assertWithinMessageCap(senderId: string): Promise<void> {
+    const subscription = await getActiveSubscription(this.db, senderId);
+    if (!subscription) return;
+
+    const remaining = await remainingMessages(this.db, subscription);
+    if (remaining === null || remaining > 0) return;
+
+    throw new HttpException(
+      `You have used all ${subscription.message_cap} messages included with your ` +
+        `${subscription.plan_code} pass. Buy another plan to keep messaging.`,
+      HttpStatus.PAYMENT_REQUIRED,
+    );
+  }
+
   async sendMessage(sender: UserRecord, conversationId: string, dto: SendMessageDto) {
     const conversation = await this.assertParticipant(sender.id, conversationId);
 
@@ -313,6 +358,8 @@ export class MessagingService {
     if (conversation.status === 'pending' && conversation.initiated_by !== sender.id) {
       throw new ForbiddenException('Accept this message request before replying.');
     }
+
+    await this.assertWithinMessageCap(sender.id);
 
     const [message] = await this.db.transaction(async (trx) => {
       const [msg] = await trx('messages')

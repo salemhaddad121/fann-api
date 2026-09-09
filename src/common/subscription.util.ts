@@ -1,4 +1,5 @@
 import { Knex } from 'knex';
+import { aggregateValue } from './db.util';
 
 /**
  * The single source of truth for "does this user have paid access right now?".
@@ -81,4 +82,39 @@ export async function hasActiveSubscription(
   userId: string,
 ): Promise<boolean> {
   return Boolean(await getActiveSubscription(db, userId));
+}
+
+/**
+ * How many messages this subscription still allows, or null when the plan
+ * is uncapped.
+ *
+ * The cap is per PERIOD, not per conversation and not lifetime: a day pass
+ * buys 15 messages during its 24 hours, and buying a second pass buys 15
+ * more. So the count is bounded below by when this subscription started,
+ * which is also what makes re-buying work — the previous pass's messages
+ * are outside the window and do not eat into the new one.
+ *
+ * `starts_at` and `activated_at` are written together at activation, so the
+ * fallback between them is belt and braces. If BOTH are somehow null the
+ * cap is treated as unenforceable and the send is allowed: that row is
+ * malformed, and refusing a paying customer because of our own data bug is
+ * a worse failure than briefly not counting. It cannot happen through the
+ * activation path — the conditional UPDATE sets both.
+ */
+export async function remainingMessages(
+  db: Knex,
+  subscription: ActiveSubscription,
+): Promise<number | null> {
+  if (subscription.message_cap === null) return null;
+
+  const periodStart = subscription.starts_at ?? subscription.activated_at;
+  if (!periodStart) return null;
+
+  const row = await db('messages')
+    .where('sender_id', subscription.user_id)
+    .where('created_at', '>=', periodStart)
+    .count({ sent: '*' })
+    .first();
+
+  return Math.max(0, subscription.message_cap - aggregateValue(row, 'sent'));
 }
