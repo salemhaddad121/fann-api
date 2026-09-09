@@ -97,6 +97,9 @@ services:
       DB_PASSWORD: fann_dev
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Lebanon's standard rate. Set to 0 to hold VAT off entirely --
+      # see src/common/vat.ts.
+      VAT_RATE: ${VAT_RATE:-0.11}
       JWT_SECRET: ${JWT_SECRET:-dev-only-jwt-secret-do-not-use-in-production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-only-refresh-secret-do-not-use-in-production}
       # MediaService getOrThrow()s these at boot (README overstates how

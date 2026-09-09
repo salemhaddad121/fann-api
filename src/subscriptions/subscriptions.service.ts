@@ -5,11 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { getActiveSubscription, PlanCode } from '../common/subscription.util';
 import { CreatePaymentIntentDto, ReportTransferDto } from './dto/subscriptions.dto';
 import { PaymentProviderRegistry } from '../payments/payment-provider.registry';
+import { resolveVatRate, vatBreakdown } from '../common/vat';
 
 /**
  * Postgres NUMERIC arrives from node-postgres as a string, because a JS
@@ -48,7 +50,19 @@ export class SubscriptionsService {
   constructor(
     @InjectConnection() private readonly db: Knex,
     private readonly providerRegistry: PaymentProviderRegistry,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Today's rate, for pricing a NEW payment and for telling the plan cards
+   * whether to mention VAT at all.
+   *
+   * Never use this to describe a payment already taken — those carry their
+   * own vat_rate, which is the whole point of storing it (migration 022).
+   */
+  private get vatRate(): number {
+    return resolveVatRate(this.configService.get<string>('VAT_RATE'));
+  }
 
   // ================================================================
   // Reads
@@ -66,7 +80,16 @@ export class SubscriptionsService {
         'message_cap',
       );
 
-    return rows.map((row) => ({ ...row, price_usd: toNumber(row.price_usd) }));
+    // price_usd is NET. The rate rides along so the cards can say so — and
+    // can stay silent when it is zero, since "Excluding VAT" is a false
+    // statement when no VAT exists.
+    const vatRate = this.vatRate;
+
+    return rows.map((row) => ({
+      ...row,
+      price_usd: toNumber(row.price_usd),
+      vat_rate: vatRate,
+    }));
   }
 
   /**
@@ -153,7 +176,13 @@ export class SubscriptionsService {
 
     // Priced server-side from the plan table. Taking an amount from the
     // request would let the buyer name their own price.
-    const amountUsd = toNumber(plan.price_usd) * quantity;
+    const subtotalUsd = toNumber(plan.price_usd) * quantity;
+    const { vatRate, vatUsd, totalUsd } = vatBreakdown(subtotalUsd, this.vatRate);
+
+    // The provider is handed, and the buyer transfers, the GROSS figure.
+    // amount_usd has always meant "what is owed" and still does — which is
+    // what keeps webhooks.service.ts's amount check correct without change.
+    const amountUsd = totalUsd;
 
     const provider = this.providerRegistry.active();
     const user = await this.db('users').where({ id: userId }).select('account_code').first();
@@ -167,6 +196,9 @@ export class SubscriptionsService {
         planner_id: userId,
         plan_code: dto.planCode,
         quantity,
+        subtotal_usd: subtotalUsd,
+        vat_rate: vatRate,
+        vat_usd: vatUsd,
         amount_usd: amountUsd,
         currency: 'USD',
         provider: provider.code,
@@ -174,7 +206,18 @@ export class SubscriptionsService {
         transfer_service: dto.transferService ?? null,
         reference_code: dto.referenceCode ?? null,
       })
-      .returning(['id', 'plan_code', 'quantity', 'amount_usd', 'currency', 'status', 'created_at']);
+      .returning([
+        'id',
+        'plan_code',
+        'quantity',
+        'subtotal_usd',
+        'vat_rate',
+        'vat_usd',
+        'amount_usd',
+        'currency',
+        'status',
+        'created_at',
+      ]);
 
     const intent = await provider.createIntent({
       paymentId: payment.id,
@@ -201,6 +244,11 @@ export class SubscriptionsService {
     return {
       ...payment,
       status: 'awaiting_provider',
+      // All four, so the checkout screen can show the buyer the arithmetic
+      // rather than one figure larger than the price they clicked.
+      subtotal_usd: toNumber(payment.subtotal_usd),
+      vat_rate: toNumber(payment.vat_rate),
+      vat_usd: toNumber(payment.vat_usd),
       amount_usd: toNumber(payment.amount_usd),
       provider: provider.code,
       // Exactly one of these is set. The frontend branches on which:
@@ -222,11 +270,30 @@ export class SubscriptionsService {
   async getMyPayment(userId: string, paymentId: string) {
     const payment = await this.db('payments')
       .where({ id: paymentId, planner_id: userId })
-      .select('id', 'plan_code', 'quantity', 'amount_usd', 'currency', 'status', 'provider', 'rejection_reason', 'created_at')
+      .select(
+        'id',
+        'plan_code',
+        'quantity',
+        'subtotal_usd',
+        'vat_rate',
+        'vat_usd',
+        'amount_usd',
+        'currency',
+        'status',
+        'provider',
+        'rejection_reason',
+        'created_at',
+      )
       .first();
 
     if (!payment) throw new NotFoundException('Payment not found.');
-    return { ...payment, amount_usd: toNumber(payment.amount_usd) };
+    return {
+      ...payment,
+      subtotal_usd: toNumber(payment.subtotal_usd),
+      vat_rate: toNumber(payment.vat_rate),
+      vat_usd: toNumber(payment.vat_usd),
+      amount_usd: toNumber(payment.amount_usd),
+    };
   }
 
   /** Buyer reports the transfer reference after paying. */

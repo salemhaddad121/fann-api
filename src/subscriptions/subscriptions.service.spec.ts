@@ -19,6 +19,14 @@ const registryStub = {
   }),
 } as any;
 
+// VAT is read from config. Default the stub to NO rate so every existing
+// test keeps asserting the pre-VAT arithmetic it was written for; the VAT
+// tests below pass their own rate explicitly.
+const configStub = (vatRate?: string) =>
+  ({ get: (key: string) => (key === 'VAT_RATE' ? vatRate : undefined) }) as any;
+
+const noVat = configStub('0');
+
 // getActiveSubscription() joins, so it addresses the table by its alias.
 const ACTIVE_LOOKUP = 'subscriptions as s';
 
@@ -51,7 +59,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
     subs.returning.mockResolvedValueOnce([{ id: 's1' }, { id: 's2' }, { id: 's3' }]);
 
     const db = createMockDb({ payments, subscription_plans: plans, subscriptions: subs });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     const result = await service.mintForPayment('pay-1');
 
@@ -81,7 +89,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
       subscriptions: subs,
       [ACTIVE_LOOKUP]: chain,
     });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await service.mintForPayment('pay-1');
 
@@ -115,7 +123,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
       subscriptions: subs,
       [ACTIVE_LOOKUP]: chain,
     });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await service.mintForPayment('pay-1');
 
@@ -135,7 +143,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
     subs.mockResolve([{ id: 'already-minted' }]);
 
     const db = createMockDb({ payments, subscriptions: subs });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     const result = await service.mintForPayment('pay-1');
 
@@ -149,7 +157,7 @@ describe('SubscriptionsService.mintForPayment()', () => {
     const payments = createMockQueryBuilder();
     payments.first.mockResolvedValueOnce(makePayment({ plan_code: null }));
     const db = createMockDb({ payments });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(service.mintForPayment('pay-1')).resolves.toEqual({
       minted: 0,
@@ -169,7 +177,7 @@ describe('SubscriptionsService.activate()', () => {
     chain.first.mockResolvedValueOnce({ id: 'active-1', plan_code: 'month' });
 
     const db = createMockDb({ subscriptions: subs, [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(service.activate('user-1', 'credit-1')).rejects.toBeInstanceOf(ConflictException);
     expect(subs.update).not.toHaveBeenCalled();
@@ -179,7 +187,7 @@ describe('SubscriptionsService.activate()', () => {
     const subs = createMockQueryBuilder();
     subs.first.mockResolvedValueOnce({ id: 'c1', user_id: 'user-1', status: 'expired', plan_code: 'day' });
     const db = createMockDb({ subscriptions: subs });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(service.activate('user-1', 'c1')).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -188,7 +196,7 @@ describe('SubscriptionsService.activate()', () => {
     const subs = createMockQueryBuilder();
     subs.first.mockResolvedValueOnce(undefined);
     const db = createMockDb({ subscriptions: subs });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(service.activate('user-1', 'c1')).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -205,7 +213,7 @@ describe('SubscriptionsService.activate()', () => {
     chain.first.mockResolvedValueOnce(undefined); // nothing running
 
     const db = createMockDb({ subscriptions: subs, subscription_plans: plans, [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     const result = await service.activate('user-1', 'c1');
 
@@ -227,7 +235,7 @@ describe('SubscriptionsService.activate()', () => {
     chain.first.mockResolvedValueOnce(undefined);
 
     const db = createMockDb({ subscriptions: subs, subscription_plans: plans, [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(service.activate('user-1', 'c1')).rejects.toBeInstanceOf(ConflictException);
   });
@@ -246,7 +254,7 @@ describe('SubscriptionsService.createPaymentIntent()', () => {
     users.first.mockResolvedValueOnce({ account_code: 'PLN-000042' });
 
     const db = createMockDb({ subscription_plans: plans, payments, users });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     const result = await service.createPaymentIntent('user-1', {
       planCode: 'month',
@@ -273,7 +281,7 @@ describe('SubscriptionsService.createPaymentIntent()', () => {
     users.first.mockResolvedValueOnce({ account_code: 'PLN-1' });
 
     const db = createMockDb({ subscription_plans: plans, payments, users });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await service.createPaymentIntent('user-1', { planCode: 'day' } as any);
 
@@ -286,7 +294,7 @@ describe('SubscriptionsService.createPaymentIntent()', () => {
     const plans = createMockQueryBuilder();
     plans.first.mockResolvedValueOnce(undefined);
     const db = createMockDb({ subscription_plans: plans });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(
       service.createPaymentIntent('user-1', { planCode: 'year' } as any),
@@ -302,7 +310,7 @@ describe('SubscriptionsService.findDueRenewalReminders()', () => {
       { id: 's1', user_id: 'u1', plan_code: 'day', expires_at: new Date(Date.now() + 3_600_000) },
     ]);
     const db = createMockDb({ [ACTIVE_LOOKUP]: chain });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(service.findDueRenewalReminders()).resolves.toEqual([]);
   });
@@ -315,7 +323,7 @@ describe('SubscriptionsService.findDueRenewalReminders()', () => {
     notifications.mockResolve([{ data: { subscription_id: 's1', days: 7 } }]);
 
     const db = createMockDb({ [ACTIVE_LOOKUP]: chain, notifications });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     await expect(service.findDueRenewalReminders()).resolves.toEqual([]);
   });
@@ -328,11 +336,110 @@ describe('SubscriptionsService.findDueRenewalReminders()', () => {
     notifications.mockResolve([]);
 
     const db = createMockDb({ [ACTIVE_LOOKUP]: chain, notifications });
-    const service = new SubscriptionsService(db, registryStub);
+    const service = new SubscriptionsService(db, registryStub, noVat);
 
     const due = await service.findDueRenewalReminders();
 
     expect(due).toHaveLength(1);
     expect(due[0]).toMatchObject({ subscription_id: 's1', days: 7 });
+  });
+});
+
+describe('SubscriptionsService.createPaymentIntent() — VAT', () => {
+  function setUp(vatRate: string, plan: Record<string, unknown> = MONTH_PLAN) {
+    const plans = createMockQueryBuilder();
+    plans.first.mockResolvedValueOnce(plan);
+    const payments = createMockQueryBuilder();
+    payments.returning.mockResolvedValueOnce([
+      { id: 'pay-1', plan_code: plan.code, quantity: 1, subtotal_usd: '0', vat_rate: '0', vat_usd: '0', amount_usd: '0' },
+    ]);
+    const users = createMockQueryBuilder();
+    users.first.mockResolvedValueOnce({ account_code: 'PLN-000042' });
+
+    const db = createMockDb({ subscription_plans: plans, payments, users });
+    return {
+      service: new SubscriptionsService(db, registryStub, configStub(vatRate)),
+      payments,
+    };
+  }
+
+  it('charges the gross amount, not the advertised net', async () => {
+    // The published price is ex-VAT, so the figure owed is larger than the
+    // one on the plan card. amount_usd has always meant "what is owed".
+    const { service, payments } = setUp('0.11');
+
+    await service.createPaymentIntent('user-1', { planCode: 'month', quantity: 1 } as any);
+
+    expect(payments.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ subtotal_usd: 15, vat_rate: 0.11, vat_usd: 1.65, amount_usd: 16.65 }),
+    );
+  });
+
+  it('multiplies before taxing, so quantity does not compound rounding', async () => {
+    // 3 day passes: 15.00 net, 1.65 tax. Taxing each pass and summing would
+    // round three times and can drift from the single-line figure.
+    const { service, payments } = setUp('0.11', DAY_PLAN);
+
+    await service.createPaymentIntent('user-1', { planCode: 'day', quantity: 3 } as any);
+
+    expect(payments.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ subtotal_usd: 15, vat_usd: 1.65, amount_usd: 16.65 }),
+    );
+  });
+
+  it('stores the rate on the row, so a later rate change cannot rewrite it', async () => {
+    const { service, payments } = setUp('0.11');
+
+    await service.createPaymentIntent('user-1', { planCode: 'month', quantity: 1 } as any);
+
+    expect(payments.insert.mock.calls[0][0].vat_rate).toBe(0.11);
+  });
+
+  it('charges exactly the net amount when VAT is held off', async () => {
+    // VAT_RATE=0 is the switch for "not registered yet". Nothing extra is
+    // charged and the stored rate says so.
+    const { service, payments } = setUp('0');
+
+    await service.createPaymentIntent('user-1', { planCode: 'month', quantity: 1 } as any);
+
+    expect(payments.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ subtotal_usd: 15, vat_rate: 0, vat_usd: 0, amount_usd: 15 }),
+    );
+  });
+
+  it('does not charge VAT on a misconfigured rate', async () => {
+    // A typo must under-charge, never over-charge.
+    const { service, payments } = setUp('eleven percent');
+
+    await service.createPaymentIntent('user-1', { planCode: 'month', quantity: 1 } as any);
+
+    expect(payments.insert.mock.calls[0][0].amount_usd).toBe(15);
+  });
+});
+
+describe('SubscriptionsService.listPlans() — VAT', () => {
+  function setUp(vatRate: string) {
+    const plans = createMockQueryBuilder();
+    plans.mockResolve([DAY_PLAN, MONTH_PLAN, YEAR_PLAN]);
+    const db = createMockDb({ subscription_plans: plans });
+    return new SubscriptionsService(db, registryStub, configStub(vatRate));
+  }
+
+  it('publishes NET prices with the rate alongside them', async () => {
+    // The cards show the net price and say "Excluding VAT"; they need the
+    // rate to know whether that sentence is true.
+    const rows = await setUp('0.11').listPlans();
+
+    expect(rows.map((r) => [r.code, r.price_usd, r.vat_rate])).toEqual([
+      ['day', 5, 0.11],
+      ['month', 15, 0.11],
+      ['year', 100, 0.11],
+    ]);
+  });
+
+  it('reports a zero rate so the cards can stay silent about VAT', async () => {
+    const rows = await setUp('0').listPlans();
+
+    expect(rows.every((r) => r.vat_rate === 0)).toBe(true);
   });
 });
