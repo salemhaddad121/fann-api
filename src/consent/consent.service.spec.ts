@@ -111,3 +111,67 @@ describe('ConsentService', () => {
     });
   });
 });
+
+describe('outdatedDocuments', () => {
+  function makeServiceWithRows(rows: unknown[]) {
+    const consents = createMockQueryBuilder();
+    consents.mockResolve(rows);
+    return new ConsentService(createMockDb({ [TABLE]: consents }));
+  }
+
+  function accepted(document: string, version: string) {
+    return { document, version, accepted_at: new Date(), granted: true };
+  }
+
+  it('names both documents for an account that never accepted anything', async () => {
+    // Accounts predating consent recording have no rows. Treating that as
+    // settled would leave users the platform can show no acceptance for.
+    const service = makeServiceWithRows([]);
+
+    await expect(service.outdatedDocuments('user-1')).resolves.toEqual([
+      'terms',
+      'privacy',
+    ]);
+  });
+
+  it('is empty when both are accepted at the current version', async () => {
+    const service = makeServiceWithRows([
+      accepted('terms', CONSENT_VERSIONS.terms),
+      accepted('privacy', CONSENT_VERSIONS.privacy),
+    ]);
+
+    await expect(service.outdatedDocuments('user-1')).resolves.toEqual([]);
+  });
+
+  it('names only the document whose version moved', async () => {
+    // The case §33.2 is about: one document is amended, the other is not.
+    const service = makeServiceWithRows([
+      accepted('terms', '2020-01-01'),
+      accepted('privacy', CONSENT_VERSIONS.privacy),
+    ]);
+
+    await expect(service.outdatedDocuments('user-1')).resolves.toEqual(['terms']);
+  });
+
+  it('never asks about marketing', async () => {
+    // Not having marketing consent is a valid permanent state, not
+    // something to be prompted about.
+    const service = makeServiceWithRows([
+      accepted('terms', CONSENT_VERSIONS.terms),
+      accepted('privacy', CONSENT_VERSIONS.privacy),
+    ]);
+
+    await expect(service.outdatedDocuments('user-1')).resolves.not.toContain('marketing');
+  });
+
+  it('reads the newest acceptance, so re-accepting clears the prompt', async () => {
+    // listForUser returns newest-first; the first row per document wins.
+    const service = makeServiceWithRows([
+      accepted('terms', CONSENT_VERSIONS.terms),
+      accepted('terms', '2020-01-01'),
+      accepted('privacy', CONSENT_VERSIONS.privacy),
+    ]);
+
+    await expect(service.outdatedDocuments('user-1')).resolves.toEqual([]);
+  });
+});

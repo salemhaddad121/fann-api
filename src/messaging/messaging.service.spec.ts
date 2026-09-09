@@ -338,3 +338,100 @@ describe('MessagingService.sendMessage() — pending request gating', () => {
     ).rejects.toThrow(/declined/i);
   });
 });
+
+describe('MessagingService.sendMessage() — the day-pass message cap', () => {
+  const SUBS_TABLE = 'subscriptions as s';
+
+  // A capped day pass, plus however many messages have already been sent
+  // in its period.
+  function setUpCappedPass(alreadySent: number) {
+    const { conversations, messages, plannerProfiles } = setUpConversation();
+
+    const subs = createMockQueryBuilder();
+    subs.first.mockResolvedValueOnce({
+      id: 'sub-1',
+      user_id: 'planner-1',
+      plan_code: 'day',
+      status: 'active',
+      activated_at: new Date(),
+      starts_at: new Date(),
+      expires_at: new Date(Date.now() + 86_400_000),
+      requires_id_doc: false,
+      message_cap: 15,
+    });
+
+    // remainingMessages counts on the same builder the insert uses; the
+    // count is read with .first(), the insert writes with .returning().
+    messages.first.mockResolvedValueOnce({ sent: alreadySent });
+
+    const db = createMockDb({
+      conversations,
+      messages,
+      planner_profiles: plannerProfiles,
+      notifications: createMockQueryBuilder(),
+      [SUBS_TABLE]: subs,
+    });
+
+    return { service: new MessagingService(db), messages };
+  }
+
+  it('refuses with 402 once the pass is spent', async () => {
+    // 402 rather than 403: the fix is to buy something, which is what the
+    // frontend's upgrade prompt is for.
+    const { service } = setUpCappedPass(15);
+
+    await expect(
+      service.sendMessage(makeUser(), 'conv-1', { body: 'One more' } as any),
+    ).rejects.toMatchObject({ status: 402 });
+  });
+
+  it('says the pass is used up, not that it expired', async () => {
+    // A spent day pass is still live. Telling the buyer it ended would send
+    // them to re-buy the wrong thing.
+    const { service } = setUpCappedPass(15);
+
+    await expect(
+      service.sendMessage(makeUser(), 'conv-1', { body: 'One more' } as any),
+    ).rejects.toThrow(/used all 15 messages/i);
+  });
+
+  it('writes nothing when the cap is hit', async () => {
+    const { service, messages } = setUpCappedPass(15);
+
+    await expect(
+      service.sendMessage(makeUser(), 'conv-1', { body: 'One more' } as any),
+    ).rejects.toThrow();
+    expect(messages.insert).not.toHaveBeenCalled();
+  });
+
+  it('allows the final message that reaches the cap', async () => {
+    // 14 sent means one left. Off-by-one here either robs the buyer of a
+    // message or hands out a free one.
+    const { service, messages } = setUpCappedPass(14);
+
+    await service.sendMessage(makeUser(), 'conv-1', { body: 'Number fifteen' } as any);
+
+    expect(messages.insert).toHaveBeenCalled();
+  });
+
+  it('never counts an artist, who holds no subscription', async () => {
+    // The subscriptions builder is left unstubbed, so the lookup resolves
+    // undefined — exactly what an artist's does in production.
+    const { conversations, messages, plannerProfiles } = setUpConversation();
+    const db = createMockDb({
+      conversations,
+      messages,
+      planner_profiles: plannerProfiles,
+      notifications: createMockQueryBuilder(),
+    });
+    const service = new MessagingService(db);
+
+    await service.sendMessage(
+      makeUser({ id: 'artist-1', role: 'artist' }),
+      'conv-1',
+      { body: 'Replying to my own inbox' } as any,
+    );
+
+    expect(messages.insert).toHaveBeenCalled();
+  });
+});
