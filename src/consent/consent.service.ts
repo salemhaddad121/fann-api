@@ -123,6 +123,28 @@ export class ConsentService {
   }
 
   /**
+   * The mandatory documents this user has not accepted at their CURRENT
+   * version — what §33.2 needs to know to prompt for re-acceptance.
+   *
+   * "Never accepted" and "accepted an older version" both count, and
+   * deliberately so. An account created before consent was recorded at all
+   * has no row, and treating that as settled would leave the platform with
+   * users it cannot show any acceptance for — which is the same gap §3.4
+   * exists to close, just arrived at from the other direction.
+   *
+   * Optional documents are never returned. Marketing is not something a
+   * user can be blocked on or asked to re-agree to; not having it is a
+   * valid, permanent state.
+   */
+  async outdatedDocuments(userId: string): Promise<ConsentDocument[]> {
+    const latest = await this.latestForUser(userId);
+
+    return MANDATORY_DOCUMENTS.filter(
+      (document) => latest[document]?.version !== CONSENT_VERSIONS[document],
+    );
+  }
+
+  /**
    * Whether an optional consent currently stands.
    *
    * Absent means false. A user who was never asked has not agreed to
