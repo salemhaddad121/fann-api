@@ -222,3 +222,41 @@ describe('SupportService.update()', () => {
     );
   });
 });
+
+describe('SupportService.create() — report targets', () => {
+  it('stores the reported account alongside the ticket', async () => {
+    // The point of item 36: a report an admin can filter and count, rather
+    // than a reference buried in prose in the body.
+    const tickets = ticketBuilder();
+    const { service } = makeService({ support_tickets: tickets });
+
+    await service.create(
+      { userId: 'planner-1', email: 'p@example.com' },
+      {
+        ...baseDto,
+        subject: 'Report: artist profile',
+        reportedKind: 'artist',
+        reportedId: '00000000-0000-0000-0000-000000000011',
+      },
+    );
+
+    expect(tickets.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reported_kind: 'artist',
+        reported_id: '00000000-0000-0000-0000-000000000011',
+      }),
+    );
+  });
+
+  it('leaves both null on an ordinary support request', async () => {
+    // Most tickets are not reports, and /help keeps producing them.
+    const tickets = ticketBuilder();
+    const { service } = makeService({ support_tickets: tickets });
+
+    await service.create({ userId: 'planner-1', email: 'p@example.com' }, baseDto);
+
+    expect(tickets.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ reported_kind: null, reported_id: null }),
+    );
+  });
+});
