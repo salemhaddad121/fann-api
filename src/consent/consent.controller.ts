@@ -1,11 +1,18 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Put, Req } from '@nestjs/common';
 import { Request } from 'express';
 import { ConsentService } from './consent.service';
-import { AcceptDocumentsDto, SetMarketingConsentDto } from './dto/consent.dto';
+import {
+  AcceptDocumentsDto,
+  SetMarketingConsentDto,
+  UnsubscribeDto,
+} from './dto/consent.dto';
+import { readUnsubscribeToken } from './unsubscribe-token';
+import { ConfigService } from '@nestjs/config';
 import { ConsentDocument } from './consent.constants';
 import { CurrentUser } from '../auth/decorators/auth.decorators';
 import { UserRecord } from '../users/users.types';
 import { clientIp } from '../common/request.util';
+import { Public } from '../auth/decorators/auth.decorators';
 
 /**
  * Consent: what still needs agreeing to, and the two ways to agree.
@@ -19,7 +26,44 @@ import { clientIp } from '../common/request.util';
  */
 @Controller('consent')
 export class ConsentController {
-  constructor(private readonly consentService: ConsentService) {}
+  constructor(
+    private readonly consentService: ConsentService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  // POST /consent/unsubscribe
+  //
+  // The one consent endpoint that takes no session (§24.2). Someone acting on
+  // a link in their inbox has not signed in and should not have to: the
+  // people most likely to unsubscribe are the ones least likely to still
+  // have an account they can get into, and a withdrawal gated behind a
+  // password is not a real withdrawal.
+  //
+  // POST rather than GET, and this is not pedantry. Mail scanners and link
+  // prefetchers follow GET links in email, so a GET here would unsubscribe
+  // people who never clicked anything. The link in the message goes to a
+  // page; the page posts this.
+  //
+  // Always answers the same way. Telling an anonymous caller whether a token
+  // was valid turns this into an oracle for whether an address is registered,
+  // and the honest response to "stop emailing me" is identical either way.
+  @Public()
+  @Post('unsubscribe')
+  @HttpCode(HttpStatus.OK)
+  async unsubscribe(@Body() dto: UnsubscribeDto, @Req() req: Request) {
+    const userId = readUnsubscribeToken(dto.token, this.configService);
+
+    if (userId) {
+      await this.consentService.setConsent(userId, 'marketing', false, {
+        ipAddress: clientIp(req),
+        userAgent: req.headers['user-agent'] ?? null,
+      });
+    }
+
+    return {
+      message: 'You have been unsubscribed from marketing emails.',
+    };
+  }
 
   // GET /consent/status
   //

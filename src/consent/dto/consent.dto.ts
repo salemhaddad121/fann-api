@@ -1,4 +1,12 @@
-import { ArrayNotEmpty, IsArray, IsBoolean, IsIn } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { MANDATORY_DOCUMENTS } from '../consent.constants';
 import { StrictBoolean } from '../../common/boolean.transform';
 
@@ -27,4 +35,15 @@ export class AcceptDocumentsDto {
     message: 'Unknown document.',
   })
   documents: string[];
+}
+
+export class UnsubscribeDto {
+  // No shape validation beyond "a non-empty string". The token carries its
+  // own proof — readUnsubscribeToken rejects anything that does not verify —
+  // and a format check here would only tell a forger which of their guesses
+  // was closer to well-formed.
+  @IsString()
+  @MinLength(1, { message: 'An unsubscribe token is required.' })
+  @MaxLength(400)
+  token: string;
 }

@@ -84,6 +84,69 @@ export class EmailService {
   // Templates
   // ----------------------------------------------------------------
 
+  /**
+   * The only way to send promotional email, and deliberately the only way.
+   *
+   * §24.2 asks for two things that are easy to state and easy to forget: send
+   * marketing only to people who agreed to it, and put an unsubscribe link in
+   * every message. Both are enforced here rather than left to whoever writes
+   * the first campaign, because "remember to check consent" and "remember the
+   * footer" are exactly the instructions that get missed on the fourth send.
+   *
+   * Consent is re-read at send time, not taken from a list assembled earlier.
+   * A campaign built on Monday and sent on Friday would otherwise email
+   * everyone who unsubscribed in between — which is the complaint that makes
+   * a domain look like a spammer.
+   *
+   * Returns whether it sent, so a caller batching a campaign can count
+   * skips without treating "they opted out" as a failure.
+   *
+   * Nothing calls this yet. It exists so that when the first campaign is
+   * written, the compliant path is the only one available.
+   */
+  async sendMarketingEmail(input: {
+    to: string;
+    userId: string;
+    subject: string;
+    /** Body only — the unsubscribe footer is appended here, not by callers. */
+    html: string;
+    hasConsent: (userId: string) => Promise<boolean>;
+    unsubscribeToken: string;
+  }): Promise<boolean> {
+    if (!(await input.hasConsent(input.userId))) {
+      this.logger.log(
+        `[Marketing] Skipped ${input.to} — no marketing consent on record.`,
+      );
+      return false;
+    }
+
+    const frontend =
+      this.configService.get<string>('FRONTEND_URL') ?? 'https://www.fann.guru';
+    const unsubscribeUrl = `${frontend}/unsubscribe?token=${encodeURIComponent(
+      input.unsubscribeToken,
+    )}`;
+
+    await this.send({
+      to: input.to,
+      subject: input.subject,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
+          ${input.html}
+          <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;">
+          <p style="font-size:12px;color:#666;">
+            You are receiving this because you opted in to updates from Fann.
+            <a href="${unsubscribeUrl}" style="color:#3C3489;">Unsubscribe</a>.
+          </p>
+          <p style="font-size:12px;color:#666;">
+            This does not affect emails about your account, bookings or payments.
+          </p>
+        </div>
+      `,
+    });
+
+    return true;
+  }
+
   async sendVerificationEmail(to: string, verifyUrl: string): Promise<void> {
     await this.send({
       to,
