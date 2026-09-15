@@ -67,6 +67,11 @@ export class SupportService {
         subject: dto.subject,
         body: dto.body,
         source_path: dto.sourcePath ?? null,
+        // Null on the great majority of tickets. The DTO guarantees these
+        // arrive as a pair, and the database CHECK guarantees it again for
+        // anything that reaches the table another way.
+        reported_kind: dto.reportedKind ?? null,
+        reported_id: dto.reportedId ?? null,
       })
       .returning(['id', 'subject', 'status', 'created_at']);
 
@@ -160,6 +165,10 @@ export class SupportService {
         't.body',
         't.status',
         't.source_path',
+        // So the queue can show WHAT a report is about without opening it.
+        // The detail query selects t.* and already had these.
+        't.reported_kind',
+        't.reported_id',
         't.created_at',
         't.resolved_at',
         't.guest_email',
