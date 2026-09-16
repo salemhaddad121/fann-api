@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +13,7 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as path from 'path';
@@ -22,6 +24,9 @@ import { ConfirmMediaDto, PresignMediaDto } from './dto/media.dto';
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;        // 10 MB
 const MAX_VIDEO_BYTES = 250 * 1024 * 1024;       // 250 MB
 const MAX_VIDEO_SECONDS = 60;
+
+/** Soft cap on media items per profile. Enforced under a per-user lock. */
+const MAX_MEDIA_ITEMS = 20;
 
 const MIME_MAP: Record<string, string> = {
   '.jpg':  'image/jpeg',
@@ -34,6 +39,7 @@ const MIME_MAP: Record<string, string> = {
 
 @Injectable()
 export class MediaService {
+  private readonly logger = new Logger(MediaService.name);
   private readonly s3: S3Client;
   private readonly bucket: string;
   private readonly cdnBase: string;
@@ -120,50 +126,118 @@ export class MediaService {
       throw new BadRequestException('That upload does not belong to you.');
     }
 
-    // Check user doesn't already have too many items (soft cap: 20)
-    const countRow = await this.db('media')
-      .where({ user_id: userId })
-      .count('id as count')
-      .first();
-    const count = aggregateValue(countRow, 'count');
-
-    if (count >= 20) {
-      throw new BadRequestException('Maximum of 20 media items per profile.');
-    }
+    // The ownership prefix above says the key is in the caller's namespace.
+    // It does not say an object is actually there — and nothing else asked
+    // S3 either, so a row could be written, and artist_profiles.thumbnail_url
+    // set, for a key that was never uploaded. The result is a broken image on
+    // a public profile and a blank thumbnail in search, with a database that
+    // believes everything is fine.
+    await this.assertObjectExists(dto.s3Key, dto.fileSizeBytes);
 
     const cdnUrl = `${this.cdnBase}/${dto.s3Key}`;
 
-    // Determine sort_order — append to end
-    const maxSortRow = await this.db('media')
-      .where({ user_id: userId })
-      .max('sort_order as maxSort')
-      .first();
-    const maxSort = maxSortRow?.maxSort ?? null;
+    // Everything below is a read-then-write over this user's media, and all
+    // three values it derives are wrong under concurrency:
+    //
+    //   * the 20-item cap — two uploads confirming in parallel at 19 both
+    //     see 19, both pass, and 21 land
+    //   * sort_order      — both read the same max and both append at the
+    //     same position
+    //   * is_primary      — two first uploads both see count 0 and both
+    //     become primary, which the thumbnail sync then settles by
+    //     whichever wrote last
+    //
+    // A transaction alone fixes none of them: under READ COMMITTED the
+    // second transaction's count simply does not see the first's
+    // uncommitted row. The advisory lock is what serialises them. It is
+    // transaction-scoped, so it is released on commit or rollback with no
+    // cleanup path to forget, and it is keyed on the user, so two artists
+    // uploading at the same moment never wait on each other.
+    return this.db.transaction(async (trx) => {
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`media:${userId}`]);
 
-    const sortOrder = maxSort !== null ? Number(maxSort) + 1 : 0;
+      const countRow = await trx('media')
+        .where({ user_id: userId })
+        .count('id as count')
+        .first();
+      const count = aggregateValue(countRow, 'count');
 
-    // First photo becomes primary automatically
-    const isPrimary = count === 0 && dto.mediaType === 'photo';
+      if (count >= MAX_MEDIA_ITEMS) {
+        throw new BadRequestException(
+          `Maximum of ${MAX_MEDIA_ITEMS} media items per profile.`,
+        );
+      }
 
-    const [row] = await this.db('media')
-      .insert({
-        user_id:         userId,
-        media_type:      dto.mediaType,
-        s3_key:          dto.s3Key,
-        cdn_url:         cdnUrl,
-        file_size_bytes: dto.fileSizeBytes,
-        duration_sec:    dto.durationSec ?? null,
-        is_primary:      isPrimary,
-        sort_order:      sortOrder,
-      })
-      .returning('*');
+      // Determine sort_order — append to end
+      const maxSortRow = await trx('media')
+        .where({ user_id: userId })
+        .max('sort_order as maxSort')
+        .first();
+      const maxSort = maxSortRow?.maxSort ?? null;
 
-    // Keep artist thumbnail_url in sync if this is now primary
-    if (isPrimary) {
-      await this.syncThumbnail(userId, cdnUrl);
+      const sortOrder = maxSort !== null ? Number(maxSort) + 1 : 0;
+
+      // First photo becomes primary automatically
+      const isPrimary = count === 0 && dto.mediaType === 'photo';
+
+      const [row] = await trx('media')
+        .insert({
+          user_id:         userId,
+          media_type:      dto.mediaType,
+          s3_key:          dto.s3Key,
+          cdn_url:         cdnUrl,
+          file_size_bytes: dto.fileSizeBytes,
+          duration_sec:    dto.durationSec ?? null,
+          is_primary:      isPrimary,
+          sort_order:      sortOrder,
+        })
+        .returning('*');
+
+      // Keep the profile thumbnail in sync if this is now primary. Inside
+      // the transaction, so a profile never points at a media row that
+      // rolled back.
+      if (isPrimary) {
+        await this.syncThumbnail(userId, cdnUrl, trx);
+      }
+
+      return row;
+    });
+  }
+
+  /**
+   * Asks S3 whether the object is really there, and whether it is the size
+   * the client said it was.
+   *
+   * The size check earns its place as much as the existence one:
+   * file_size_bytes is client-supplied and is what the cap logic and
+   * profile completeness read, so a 40 MB video declared as 1 KB would
+   * otherwise be taken on the client's word. The presigned PUT pins
+   * ContentLength, so a mismatch means what landed is not what was declared.
+   */
+  private async assertObjectExists(s3Key: string, declaredBytes: number): Promise<void> {
+    let head;
+    try {
+      head = await this.s3.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: s3Key }),
+      );
+    } catch (err: any) {
+      const status = err?.$metadata?.httpStatusCode;
+      if (status === 404 || err?.name === 'NotFound' || err?.name === 'NoSuchKey') {
+        throw new BadRequestException(
+          'That upload was not found in storage. Please upload the file again.',
+        );
+      }
+      // A 403, a timeout or an outage is not the caller's fault and must
+      // not be reported as though they sent something wrong.
+      this.logger.error(`[Media] HeadObject failed for ${s3Key}: ${err?.message ?? err}`);
+      throw err;
     }
 
-    return row;
+    if (head.ContentLength !== undefined && head.ContentLength !== declaredBytes) {
+      throw new BadRequestException(
+        'The uploaded file does not match the size that was declared.',
+      );
+    }
   }
 
   // ----------------------------------------------------------------
@@ -195,10 +269,27 @@ export class MediaService {
     if (!item)                   throw new NotFoundException('Media item not found.');
     if (item.user_id !== userId)  throw new ForbiddenException('Not your media.');
 
-    // Delete from S3
-    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: item.s3_key }));
-
+    // Row first, object second, and the object's failure is survivable.
+    //
+    // It was the other way round with no error handling, so any storage
+    // error — a timeout, a 403, R2 having a bad minute — threw before the
+    // row was touched. The user pressed delete, got a 500, and the photo
+    // was still on their profile; retrying hit the same wall.
+    //
+    // This way the user-visible effect always happens. The cost is an
+    // orphaned object while storage is down, which is invisible and costs
+    // storage — strictly better than a photo its owner cannot remove. The
+    // key is logged at error level so it can be swept.
     await this.db('media').where({ id: mediaId }).delete();
+
+    try {
+      await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: item.s3_key }));
+    } catch (err: any) {
+      this.logger.error(
+        `[Media] Row ${mediaId} deleted but its object was not. ` +
+        `Orphaned key: ${item.s3_key} — ${err?.message ?? err}`,
+      );
+    }
 
     // If deleted item was primary, promote the next photo
     if (item.is_primary) {
@@ -230,12 +321,16 @@ export class MediaService {
     }
   }
 
-  private async syncThumbnail(userId: string, cdnUrl: string | null) {
+  private async syncThumbnail(
+    userId: string,
+    cdnUrl: string | null,
+    trx: Knex | Knex.Transaction = this.db,
+  ) {
     // Update whichever profile table this user belongs to
-    await this.db('artist_profiles')
+    await trx('artist_profiles')
       .where({ user_id: userId })
       .update({ thumbnail_url: cdnUrl });
-    await this.db('planner_profiles')
+    await trx('planner_profiles')
       .where({ user_id: userId })
       .update({ thumbnail_url: cdnUrl });
   }
