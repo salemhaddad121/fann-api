@@ -113,6 +113,33 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async deleteOtp(phone: string): Promise<void> {
     await this.client.del(this.otpKey(phone));
+    await this.client.del(this.otpAttemptsKey(phone));
+  }
+
+  // ----------------------------------------------------------------
+  // OTP attempts — per PHONE NUMBER, not per IP.
+  //
+  // ThrottlerGuard limits by IP, which is the wrong axis on its own here:
+  // the code is six digits with a ten-minute life, and an attacker with a
+  // handful of addresses gets a handful of budgets against the same target.
+  // Counting against the number being verified caps the total guesses that
+  // number can ever receive, however they arrive.
+  //
+  // The counter shares the code's TTL, so it expires when the code does and
+  // a fresh code starts from zero.
+  // ----------------------------------------------------------------
+  private otpAttemptsKey(phone: string) {
+    return `otp:attempts:${phone}`;
+  }
+
+  /** Increments and returns the failure count for this number. */
+  async recordOtpFailure(phone: string): Promise<number> {
+    const key = this.otpAttemptsKey(phone);
+    const attempts = await this.client.incr(key);
+    // Set on first failure only — re-applying it on each would slide the
+    // window forward and let a slow attacker keep the budget alive forever.
+    if (attempts === 1) await this.client.expire(key, 600);
+    return attempts;
   }
 
   // ----------------------------------------------------------------

@@ -29,6 +29,7 @@ import {
   ForgotPasswordDto,
   LoginDto,
   RegisterDto,
+  ResendVerificationDto,
   ResetPasswordDto,
   SendOtpDto,
   VerifyOtpDto,
@@ -125,8 +126,26 @@ export class AuthController {
   // ----------------------------------------------------------------
   @Public()
   @Get('verify-email')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async verifyEmail(@Query('token') token: string) {
     return this.authService.verifyEmail(token);
+  }
+
+  // ----------------------------------------------------------------
+  // POST /auth/resend-verification
+  //
+  // Throttled hard: it sends mail to an address the caller names, so an
+  // open version is a way to have this domain mailbomb a third party.
+  // Returns the same generic message whatever happens — see the service.
+  // ----------------------------------------------------------------
+  @Public()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 3, ttl: 900000 } })
+  async resendVerification(@Body() dto: ResendVerificationDto) {
+    return this.authService.resendEmailVerification(dto.email);
   }
 
   // ----------------------------------------------------------------
@@ -199,9 +218,13 @@ export class AuthController {
   // ----------------------------------------------------------------
   // POST /auth/send-otp
   // ----------------------------------------------------------------
+  // Three an hour. Every call is a paid WhatsApp Business template
+  // message, so an unthrottled endpoint is somebody else's bill as well as
+  // a nuisance to whoever owns the number being messaged.
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard)
+  @Throttle({ default: { limit: 3, ttl: 3600000 } })
   async sendOtp(
     @CurrentUser('id') userId: string,
     @Body() dto: SendOtpDto,
@@ -212,9 +235,15 @@ export class AuthController {
   // ----------------------------------------------------------------
   // POST /auth/verify-otp
   // ----------------------------------------------------------------
+  // Five attempts per quarter hour per IP. verifyOtp() additionally counts
+  // failures against the phone NUMBER and destroys the code after five, so
+  // the cap holds for an attacker who changes address between guesses —
+  // see MAX_OTP_ATTEMPTS. Twenty-five consecutive wrong codes used to all
+  // return 400 and none return 429.
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(ThrottlerGuard, JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 900000 } })
   async verifyOtp(
     @CurrentUser('id') userId: string,
     @Body() dto: VerifyOtpDto,

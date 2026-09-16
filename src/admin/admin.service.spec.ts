@@ -120,3 +120,84 @@ describe('AdminService.resolveFlag()', () => {
     );
   });
 });
+
+// ----------------------------------------------------------------
+// B3 — resetUserPassword() wrote the hash, then wrote an audit row with
+// an action not in the audit_action enum. Postgres raised 22P02, Nest
+// returned 500, and the password change had ALREADY committed — so the
+// account was left with a password nobody had seen. The endpoint has
+// never once succeeded.
+// ----------------------------------------------------------------
+describe('AdminService.resetUserPassword()', () => {
+  function setup() {
+    const users = createMockQueryBuilder();
+    users.first.mockResolvedValue({ id: 'user-1', role: 'artist' });
+    const auditLog = createMockQueryBuilder();
+    const notifications = createMockQueryBuilder();
+    const db = createMockDb({ users, audit_log: auditLog, notifications });
+    const service = new AdminService(
+      db,
+      verificationStub as any,
+      subscriptionsStub as any,
+      identityStub as any,
+    );
+    return { service, db, users, auditLog, notifications };
+  }
+
+  it('returns a temporary password to the admin', async () => {
+    const { service } = setup();
+
+    const result = await service.resetUserPassword('admin-1', 'user-1');
+
+    expect(typeof result.temporaryPassword).toBe('string');
+    expect(result.temporaryPassword.length).toBeGreaterThan(0);
+  });
+
+  it('writes the hash, the audit row and the notification in ONE transaction', async () => {
+    // The whole point of the fix: a failure in any of the three must roll
+    // the password back to the one the user still knows.
+    const { service, db, users, auditLog, notifications } = setup();
+
+    await service.resetUserPassword('admin-1', 'user-1', 'called support');
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(users.update).toHaveBeenCalledWith(
+      expect.objectContaining({ password_hash: expect.any(String) }),
+    );
+    expect(auditLog.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'user_password_reset', target_id: 'user-1' }),
+    );
+    expect(notifications.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'user-1', type: 'password_reset_by_admin' }),
+    );
+  });
+
+  it('never records the generated password anywhere', async () => {
+    const { service, users, auditLog, notifications } = setup();
+
+    const { temporaryPassword } = await service.resetUserPassword('admin-1', 'user-1');
+
+    const written = JSON.stringify([
+      users.update.mock.calls,
+      auditLog.insert.mock.calls,
+      notifications.insert.mock.calls,
+    ]);
+    expect(written).not.toContain(temporaryPassword);
+  });
+
+  it('still refuses to reset another admin', async () => {
+    const users = createMockQueryBuilder();
+    users.first.mockResolvedValue({ id: 'admin-2', role: 'admin' });
+    const db = createMockDb({ users });
+    const service = new AdminService(
+      db,
+      verificationStub as any,
+      subscriptionsStub as any,
+      identityStub as any,
+    );
+
+    await expect(service.resetUserPassword('admin-1', 'admin-2')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+});

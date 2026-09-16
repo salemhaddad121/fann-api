@@ -1,0 +1,34 @@
+-- =============================================================
+-- 027: the enum value admin password reset has always needed
+--
+-- resetUserPassword() writes the new password hash, then writes an audit
+-- row with action 'user_password_reset'. That value is not in the
+-- audit_action enum, so Postgres raises 22P02 and Nest returns 500 —
+-- AFTER the password change has already committed, and without ever
+-- returning the generated temporary password to the admin.
+--
+-- The result was the worst possible ordering: the user's password is now
+-- a random string nobody has seen, so they cannot log in with their old
+-- one and the admin cannot tell them the new one. The account is
+-- unreachable by both of them. The endpoint has never once succeeded.
+--
+-- Two changes ship together. This adds the missing value; admin.service.ts
+-- wraps the hash update, the audit row and the notification in one
+-- transaction so that a future failure in any of them rolls the password
+-- back instead of stranding the account.
+--
+-- Every other writeAudit() call site was checked against this enum while
+-- here, per the audit's instruction. All of them — user.approved,
+-- user.suspended, user.banned, id_doc.approved, id_doc.rejected,
+-- payment.confirmed, payment.rejected, review.removed and the six
+-- category/category_group values — are present. This was the only
+-- mismatch.
+--
+-- The underscore spelling is inconsistent with the dotted convention the
+-- rest of the enum uses. It is kept because it is what the code already
+-- writes, no row has ever carried it, and nothing renders these values
+-- yet — so renaming would be churn with no observable benefit. Worth
+-- settling deliberately if a third spelling ever shows up.
+-- =============================================================
+
+ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'user_password_reset';
