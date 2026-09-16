@@ -443,3 +443,83 @@ describe('SubscriptionsService.listPlans() — VAT', () => {
     expect(rows.every((r) => r.vat_rate === 0)).toBe(true);
   });
 });
+
+// ----------------------------------------------------------------
+// C2 — the day pass carries message_cap 15 and the server enforces it
+// exactly, but nothing told the buyer how many they had left. The first
+// they knew of the cap was being refused by it.
+//
+// remainingMessages() already existed; it was only ever called at the
+// point of refusal. getMine() is where the UI reads its plan from, so that
+// is where the number has to appear.
+//
+// Driven through the real query path rather than by mocking
+// subscription.util: that module is shared with activate() and the
+// paywall, and mocking it here breaks their tests too.
+// ----------------------------------------------------------------
+describe('SubscriptionsService.getMine() — messages remaining', () => {
+  function setup(active: Record<string, unknown> | null, messagesSent: number) {
+    const subs = createMockQueryBuilder();
+    // getActiveSubscription()'s .first(), then the history query's await.
+    subs.first.mockResolvedValue(active ?? undefined);
+    subs.mockResolve([]);
+
+    const messages = createMockQueryBuilder();
+    messages.first.mockResolvedValue({ sent: String(messagesSent) });
+
+    const db = createMockDb({ [ACTIVE_LOOKUP]: subs, messages });
+    return new SubscriptionsService(db, noVat, registryStub);
+  }
+
+  const dayPass = {
+    id: 'sub-1',
+    user_id: 'user-1',
+    plan_code: 'day',
+    status: 'active',
+    message_cap: 15,
+    starts_at: new Date('2026-09-16T00:00:00Z'),
+    activated_at: new Date('2026-09-16T00:00:00Z'),
+  };
+
+  it('reports how many day-pass messages are left', async () => {
+    const service = setup(dayPass, 4);
+
+    const result = await service.getMine('user-1');
+
+    expect(result.active).toMatchObject({ plan_code: 'day', messages_remaining: 11 });
+  });
+
+  it('reports zero as zero, not as absent', async () => {
+    // A spent day pass and an uncapped plan must not look alike to the
+    // client — one needs "0 left", the other needs no counter at all.
+    const service = setup(dayPass, 15);
+
+    const result = await service.getMine('user-1');
+
+    expect(result.active).toMatchObject({ messages_remaining: 0 });
+  });
+
+  it('never goes negative when more were somehow sent than the cap', async () => {
+    const service = setup(dayPass, 40);
+
+    const result = await service.getMine('user-1');
+
+    expect(result.active).toMatchObject({ messages_remaining: 0 });
+  });
+
+  it('reports null for an uncapped plan', async () => {
+    const service = setup({ ...dayPass, plan_code: 'month', message_cap: null }, 900);
+
+    const result = await service.getMine('user-1');
+
+    expect(result.active).toMatchObject({ messages_remaining: null });
+  });
+
+  it('stays null overall when there is no active plan', async () => {
+    const service = setup(null, 0);
+
+    const result = await service.getMine('user-1');
+
+    expect(result.active).toBeNull();
+  });
+});

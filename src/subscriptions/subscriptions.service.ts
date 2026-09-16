@@ -8,7 +8,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
-import { getActiveSubscription, PlanCode } from '../common/subscription.util';
+import {
+  getActiveSubscription,
+  remainingMessages,
+  PlanCode,
+} from '../common/subscription.util';
 import { CreatePaymentIntentDto, ReportTransferDto } from './dto/subscriptions.dto';
 import { PaymentProviderRegistry } from '../payments/payment-provider.registry';
 import { resolveVatRate, vatBreakdown } from '../common/vat';
@@ -125,7 +129,15 @@ export class SubscriptionsService {
       .reverse();
 
     return {
-      active: active ?? null,
+      // messages_remaining rides along with the active plan because the UI
+      // had no way to compute it. The day pass carries message_cap 15 and
+      // the server enforces it exactly — but nothing told the buyer how
+      // many they had left, so the first they knew of the cap was being
+      // refused by it. null means uncapped (month and year plans), which
+      // is a different thing from zero and has to stay distinguishable.
+      active: active
+        ? { ...active, messages_remaining: await remainingMessages(this.db, active) }
+        : null,
       queued,
       credits: { available: credits.length, rows: credits },
       history,
