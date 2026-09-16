@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,19 @@ import {
   CreateBookingDto,
   RespondBookingDto,
 } from './dto/bookings.dto';
+
+/** The statuses a booking may be cancelled FROM. */
+const CANCELLABLE_STATUSES = ['pending', 'accepted'];
+
+/**
+ * What a losing compare-and-swap tells the caller.
+ *
+ * 409 rather than 400: nothing about the request was wrong, it simply
+ * arrived second. The client should re-read and show the current state
+ * rather than asking the user to correct anything.
+ */
+const CONCURRENT_CHANGE =
+  'This booking was changed by someone else a moment ago. Refresh to see its current status.';
 
 @Injectable()
 export class BookingsService {
@@ -96,16 +110,29 @@ export class BookingsService {
       throw new BadRequestException(`Booking is already ${booking.status}.`);
     }
 
+    // Compare-and-swap, not read-then-write.
+    //
+    // The status check above is necessary and not sufficient: Accept and
+    // Decline fired together both read 'pending', both pass it, and both
+    // update — so the last writer wins and the planner receives BOTH
+    // notifications, one of which is a lie. Carrying the expected status in
+    // the WHERE means the loser updates zero rows and finds out.
+    //
+    // The pattern already exists in this codebase. subscriptions.activate()
+    // does exactly this; this is that, applied here.
     if (dto.decision === 'accepted') {
       const [updated] = await this.db('bookings')
-        .where({ id: bookingId })
+        .where({ id: bookingId, status: 'pending' })
         .update({
           status:             'accepted',
           artist_accepted_at: this.db.fn.now(),
         })
         .returning('*');
 
-      // Notify planner
+      if (!updated) throw new ConflictException(CONCURRENT_CHANGE);
+
+      // Notify planner — only after the swap actually won, so the
+      // notification cannot describe a transition that did not happen.
       await this.notify(booking.planner_id, 'booking_accepted', 'Booking accepted', {
         booking_id: bookingId,
         event_name: booking.event_name,
@@ -115,9 +142,11 @@ export class BookingsService {
       return updated;
     } else {
       const [updated] = await this.db('bookings')
-        .where({ id: bookingId })
+        .where({ id: bookingId, status: 'pending' })
         .update({ status: 'declined' })
         .returning('*');
+
+      if (!updated) throw new ConflictException(CONCURRENT_CHANGE);
 
       await this.notify(booking.planner_id, 'booking_declined', 'Booking declined', {
         booking_id: bookingId,
@@ -135,12 +164,19 @@ export class BookingsService {
   async cancel(user: UserRecord, bookingId: string, dto: CancelBookingDto) {
     const booking = await this.findAndAssertParticipant(user.id, bookingId);
 
-    if (!['pending', 'accepted'].includes(booking.status)) {
+    if (!CANCELLABLE_STATUSES.includes(booking.status)) {
       throw new BadRequestException(`Cannot cancel a booking that is ${booking.status}.`);
     }
 
+    // Same compare-and-swap, and here the read-then-write was worse than a
+    // duplicate notification: a cancel racing an accept could write
+    // 'cancelled' and then be overwritten back to 'accepted' by the other
+    // statement, leaving a booking that both parties believe is cancelled
+    // live in the database. whereIn pins the exact set of statuses the
+    // check above allowed, so a status that changed underneath us loses.
     const [updated] = await this.db('bookings')
       .where({ id: bookingId })
+      .whereIn('status', CANCELLABLE_STATUSES)
       .update({
         status:            'cancelled',
         cancelled_by:      user.id,
@@ -148,6 +184,8 @@ export class BookingsService {
         cancellation_note: dto.note ?? null,
       })
       .returning('*');
+
+    if (!updated) throw new ConflictException(CONCURRENT_CHANGE);
 
     // Notify the other party
     const otherPartyId =
