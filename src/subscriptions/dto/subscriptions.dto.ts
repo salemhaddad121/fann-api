@@ -13,8 +13,23 @@ export const PLAN_CODES = ['day', 'month', 'year'] as const;
  */
 export const MAX_PURCHASE_QUANTITY = 30;
 
-/** Matches the existing payment_service enum from migration 001. */
-export const TRANSFER_SERVICES = ['OMT', 'Wish', 'WesternUnion', 'other'] as const;
+/**
+ * The transfer services a buyer may SELECT today. Whish only.
+ *
+ * Deliberately narrower than the payment_service enum in migration 001,
+ * which still carries 'OMT' and 'WesternUnion'. That enum is not migrated
+ * and must not be: historical rows reference those values, and the admin
+ * panel's label map should keep rendering them so old payments stay
+ * readable. This constant governs what a new purchase may claim, which is
+ * a different question from what an old one already says.
+ *
+ * Note the spelling. 'Wish' is wrong and is known to be wrong — see
+ * whish.provider.ts — but it is the enum value with seed data behind it,
+ * and both the plans page and the admin panel already map it to "Whish
+ * Money" for display. Do not add a second misspelling, and do not fix this
+ * one here.
+ */
+export const TRANSFER_SERVICES = ['Wish', 'other'] as const;
 
 export class CreatePaymentIntentDto {
   @IsIn(PLAN_CODES)
