@@ -42,21 +42,34 @@ export class MessagingService {
         isArtist ? 'op.user_id' : 'op.user_id',
         isArtist ? 'c.planner_id' : 'c.artist_id',
       )
-      // Last message
+      // Last message — exactly one row per conversation.
+      //
+      // This was two joins: a grouped subquery for max(created_at), then
+      // `messages` joined back on that timestamp. A timestamp is not a key,
+      // so any conversation whose two newest messages share one matched
+      // TWICE and the conversation appeared twice in the list — with the
+      // same id, which React then reported as a duplicate key.
+      //
+      // Not hypothetical and not only a seed-data artifact: two messages
+      // inserted in the same transaction take the same now(), and Postgres
+      // timestamps have microsecond resolution, so any two sent close
+      // enough together tie.
+      //
+      // DISTINCT ON picks one row per conversation inside the subquery, so
+      // the join cannot fan out whatever the data looks like. The id is the
+      // tiebreaker after created_at, which makes the choice deterministic
+      // rather than whichever row the planner happened to return.
       .leftJoin(
         this.db('messages')
-          .select('conversation_id')
-          .max('created_at as latest_at')
-          .groupBy('conversation_id')
-          .as('lm_time'),
-        'lm_time.conversation_id', 'c.id',
-      )
-      .leftJoin(
-        'messages as lm',
-        (join) =>
-          join
-            .on('lm.conversation_id', 'c.id')
-            .on('lm.created_at', 'lm_time.latest_at'),
+          .distinctOn('conversation_id')
+          .select('conversation_id', 'body', 'sender_id')
+          .orderBy([
+            { column: 'conversation_id' },
+            { column: 'created_at', order: 'desc' },
+            { column: 'id', order: 'desc' },
+          ])
+          .as('lm'),
+        'lm.conversation_id', 'c.id',
       )
       .where(isArtist ? 'c.artist_id' : 'c.planner_id', user.id)
       // Declined requests are dead threads — kept as rows so the artist

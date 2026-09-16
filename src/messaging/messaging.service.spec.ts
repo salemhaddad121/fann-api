@@ -435,3 +435,57 @@ describe('MessagingService.sendMessage() — the day-pass message cap', () => {
     expect(messages.insert).toHaveBeenCalled();
   });
 });
+
+// ----------------------------------------------------------------
+// listConversations() used to return the same conversation twice.
+//
+// The last-message lookup was a grouped subquery for max(created_at) joined
+// back to `messages` ON that timestamp. A timestamp is not a key: any
+// conversation whose two newest messages shared one matched twice, and the
+// conversation appeared twice in the list — with the same id, which React
+// reported as a duplicate key on /messages.
+//
+// Not a seed-data curiosity. Two messages written in the same transaction
+// take the same now(), and any two sent close enough together tie at
+// microsecond resolution.
+// ----------------------------------------------------------------
+describe('MessagingService.listConversations() — one row per conversation', () => {
+  it('picks the last message with DISTINCT ON rather than by timestamp equality', async () => {
+    const conversations = createMockQueryBuilder();
+    conversations.mockResolve([]);
+    const db = createMockDb({ 'conversations as c': conversations });
+
+    // Records what the subquery builder was asked to do.
+    const subquery = createMockQueryBuilder();
+    subquery.distinctOn = jest.fn(() => subquery);
+    subquery.as = jest.fn(() => subquery);
+    const messagesBuilder = jest.fn(() => subquery);
+    const originalDb = db;
+    const wrapped: any = jest.fn((table: string) =>
+      table === 'messages' ? messagesBuilder() : originalDb(table),
+    );
+    Object.assign(wrapped, originalDb);
+
+    const service = new MessagingService(wrapped);
+    await service.listConversations({ id: 'user-1', role: 'artist' } as any);
+
+    // DISTINCT ON is what makes the fan-out impossible: the subquery yields
+    // one row per conversation before the join ever happens.
+    expect(subquery.distinctOn).toHaveBeenCalledWith('conversation_id');
+
+    // And the ordering has to carry a real tiebreaker after created_at,
+    // otherwise "which message" is whatever the planner returns first.
+    const ordering = subquery.orderBy.mock.calls[0][0];
+    expect(ordering).toEqual([
+      { column: 'conversation_id' },
+      { column: 'created_at', order: 'desc' },
+      { column: 'id', order: 'desc' },
+    ]);
+  });
+
+  it('no longer joins messages on a timestamp', async () => {
+    // The shape of the bug: `.on('lm.created_at', 'lm_time.latest_at')`.
+    const source = MessagingService.prototype.listConversations.toString();
+    expect(source).not.toContain('latest_at');
+  });
+});
