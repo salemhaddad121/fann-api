@@ -314,6 +314,29 @@ export class AuthService {
     return { message: 'If an account with that email exists, a password reset link has been sent.' };
   }
 
+  /**
+   * Is this reset link still good?
+   *
+   * Exists so /reset-password can find out on mount instead of after the
+   * user has typed a new password twice and pressed submit. That was the
+   * whole of M10: the form rendered for a dead link, and the only way to
+   * discover it was dead was to fill it in.
+   *
+   * Reads the token without consuming it — a check that spent the token
+   * would make the page that calls it break the flow it is trying to
+   * protect.
+   *
+   * Not an enumeration risk worth worrying about: the token is 32 random
+   * bytes, so "does this one exist" cannot be asked usefully, and the route
+   * is throttled. It reveals nothing about any account either way — no
+   * address, no id, just whether one specific opaque string is live.
+   */
+  async isPasswordResetTokenValid(token: string): Promise<{ valid: boolean }> {
+    if (!token) return { valid: false };
+    const userId = await this.redisService.getPasswordResetToken(token);
+    return { valid: Boolean(userId) };
+  }
+
   async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
     const userId = await this.redisService.getPasswordResetToken(token);
     if (!userId) throw new BadRequestException('Reset link is invalid or has expired.');

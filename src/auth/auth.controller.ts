@@ -162,6 +162,20 @@ export class AuthController {
   }
 
   // ----------------------------------------------------------------
+  // GET /auth/reset-password/valid?token=...
+  //
+  // Lets the reset page show the expired-link state on mount rather than
+  // after the user has filled the form in. Does not consume the token.
+  // ----------------------------------------------------------------
+  @Public()
+  @Get('reset-password/valid')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  async checkResetToken(@Query('token') token: string) {
+    return this.authService.isPasswordResetTokenValid(token);
+  }
+
+  // ----------------------------------------------------------------
   // POST /auth/reset-password
   // ----------------------------------------------------------------
   @Public()
