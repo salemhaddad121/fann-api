@@ -24,6 +24,7 @@ import { JwtAuthGuard } from './auth/guards/auth.guards';
 import { SupportModule } from './support/support.module';
 import { PaymentsModule } from './payments/payments.module';
 import { StripNulBytesPipe } from './common/nul-byte.pipe';
+import { RedisThrottlerStorage } from './redis/redis-throttler.storage';
 
 @Module({
   imports: [
@@ -65,7 +66,20 @@ import { StripNulBytesPipe } from './common/nul-byte.pipe';
     // Rate limiting — registered globally so ThrottlerGuard resolves anywhere,
     // but only ENFORCED on the auth routes that opt in via
     // @UseGuards(ThrottlerGuard). Default bucket: 10 requests / 60s per IP.
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }]),
+    //
+    // Counters live in Redis. Without a storage provider the Throttler uses
+    // an in-process Map, and this API runs as Vercel serverless functions:
+    // every concurrent instance keeps its own counter and instances are
+    // recycled constantly, so "5 per minute per IP" was really five per
+    // minute PER INSTANCE. It works locally, which is precisely why it hid.
+    ThrottlerModule.forRootAsync({
+      imports: [RedisModule],
+      inject: [RedisThrottlerStorage],
+      useFactory: (storage: RedisThrottlerStorage) => ({
+        throttlers: [{ ttl: 60000, limit: 10 }],
+        storage,
+      }),
+    }),
 
     RedisModule,
     EmailModule,
