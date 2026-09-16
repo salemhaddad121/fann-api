@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 
@@ -9,6 +9,22 @@ export class SavedService {
   // Idempotent — saving an already-saved artist just no-ops rather than
   // erroring, so the frontend can always call this without checking first.
   async save(plannerId: string, artistProfileId: string): Promise<{ message: string }> {
+    // Checked rather than left to the foreign key. A well-formed UUID that
+    // names no artist used to reach the insert and come back as an
+    // unhandled 23503 — the only 5xx in 1,067 authorization-matrix calls,
+    // and a 500 for what is simply a wrong id.
+    //
+    // This is a check-then-insert and therefore racy in principle: an
+    // artist deleted between the two statements would still raise 23503.
+    // That is fine, because DatabaseExceptionFilter now maps 23503 to a
+    // 404 — the same answer this returns. The check is here to give the
+    // common case a proper message, not to be the only line of defence.
+    const exists = await this.db('artist_profiles')
+      .where({ id: artistProfileId })
+      .select('id')
+      .first();
+    if (!exists) throw new NotFoundException('Artist not found.');
+
     await this.db('saved_artists')
       .insert({ planner_id: plannerId, artist_profile_id: artistProfileId })
       .onConflict(['planner_id', 'artist_profile_id'])
