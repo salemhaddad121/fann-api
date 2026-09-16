@@ -1,6 +1,14 @@
 node_modules/
 dist/
+coverage/
+
+# .env alone left .env.local, .env.production and .env.backup trackable —
+# and a real secret has to be committed only once. The negation keeps the
+# example file, which is the one that is supposed to be in the repo.
 .env
+.env.*
+!.env.example
+
 *.log
 .DS_Store
 

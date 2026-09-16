@@ -37,6 +37,7 @@ describeRedis('RedisThrottlerStorage (against a real Redis)', () => {
         `Redis at ${REDIS_URL} is unreachable (${(err as Error).message}). ` +
         'Start it with `docker compose up -d redis`, or set SKIP_REDIS_TESTS=1 ' +
         'to skip these — but then say so, because they will not have run.',
+        { cause: err },
       );
     }
     storage = new RedisThrottlerStorage({ getClient: () => client } as never);

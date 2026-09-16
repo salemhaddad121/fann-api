@@ -30,6 +30,9 @@ export class StripNulBytesPipe implements PipeTransform {
 // this cannot recurse further than that parse did.
 function strip(value: unknown): unknown {
   if (typeof value === 'string') {
+    // The NUL byte is the entire subject of this pipe; matching it is the
+    // point, not an accident.
+    // eslint-disable-next-line no-control-regex
     return value.includes('\u0000') ? value.replace(/\u0000/g, '') : value;
   }
 

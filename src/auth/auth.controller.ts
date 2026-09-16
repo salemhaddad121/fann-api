@@ -27,7 +27,6 @@ import {
   ChangePasswordDto,
   DeleteAccountDto,
   ForgotPasswordDto,
-  LoginDto,
   RegisterDto,
   ResendVerificationDto,
   ResetPasswordDto,
