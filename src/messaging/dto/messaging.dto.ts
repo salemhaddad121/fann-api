@@ -9,7 +9,7 @@ import {
   Min,
   Max,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 // ----------------------------------------------------------------
 // Start a conversation
@@ -40,8 +40,19 @@ export class RespondToRequestDto {
 // Send a message
 // ----------------------------------------------------------------
 export class SendMessageDto {
+  // Trimmed BEFORE validation, not after.
+  //
+  // @IsNotEmpty() only rejects the empty string, and a body of three
+  // spaces is not the empty string — so it passed, returned 201, and put a
+  // blank bubble in the conversation. Trimming in the service instead
+  // would be too late: the validator has already approved by then, and the
+  // 4,000-character cap would be measured against padding.
+  //
+  // The trimmed value is what gets stored, so leading and trailing
+  // whitespace never reaches the database either.
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Message cannot be empty.' })
   @MaxLength(4000)
   body: string;
 }
