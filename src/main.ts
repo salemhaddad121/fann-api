@@ -10,6 +10,7 @@ import { RequestMethod } from '@nestjs/common';
 import cookieParser = require('cookie-parser');
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { DatabaseExceptionFilter } from './common/database-exception.filter';
 
 async function bootstrap() {
   // rawBody keeps an untouched Buffer copy of every request body alongside
@@ -37,6 +38,16 @@ async function bootstrap() {
   // applied to every response.
   app.use(helmet());
   app.use(cookieParser());
+
+  // Maps PostgreSQL driver errors onto real status codes. Registered here
+  // rather than as an APP_FILTER provider because it needs no injection, and
+  // because a filter that turns 500s into 400s is worth being able to find
+  // from bootstrap rather than from a provider array.
+  //
+  // It catches everything, so it also becomes the last-resort handler for
+  // unmapped errors — those still return a bare 500, with the original
+  // logged. See the filter for why the mapping is an allowlist.
+  app.useGlobalFilters(new DatabaseExceptionFilter());
 
   app.enableCors({
     origin:      process.env.FRONTEND_URL ?? 'http://localhost:3000',
