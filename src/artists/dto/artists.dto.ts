@@ -2,21 +2,27 @@ import {
   ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
+  IsDateString,
   IsIn,
-  IsISO4217CurrencyCode,
-  IsNotEmpty,
   IsNumber,
-  IsObject,
   IsOptional,
-  IsPositive,
   IsString,
   IsUUID,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { MAX_PAGE, MAX_PAGE_SIZE } from '../../common/pagination.constants';
+import { SocialLinksDto } from '../../common/social-links.dto';
+
+// NUMERIC(10,2) — the largest value the column can hold. Without a ceiling
+// a price of 1e12 passes @Min(0), reaches Postgres and raises 22003
+// ("numeric field overflow") from inside the driver, which is a 500 on what
+// is plainly a bad request.
+const MAX_NUMERIC_10_2 = 99999999.99;
 
 // ----------------------------------------------------------------
 // Search / list query
@@ -64,8 +70,13 @@ export class SearchArtistsDto {
   verifiedOnly?: boolean;
 
   // availability: only artists free on this date (ISO date string)
+  //
+  // @IsDateString, not @IsString: the value is interpolated into a date
+  // comparison, so `?availableOn=notadate` used to reach SQL and come back
+  // as a 500 ("invalid input syntax for type date") on the busiest public
+  // endpoint on the site.
   @IsOptional()
-  @IsString()
+  @IsDateString()
   availableOn?: string;
 
   @IsOptional()
@@ -93,7 +104,12 @@ export class SearchArtistsDto {
 // Update own profile
 // ----------------------------------------------------------------
 export class UpdateArtistProfileDto {
-  @IsOptional()
+  // @ValidateIf rather than @IsOptional, and the difference matters:
+  // @IsOptional() skips validation for null as well as undefined, so
+  // `{"displayName": null}` passed every check and then violated the
+  // column's NOT NULL constraint as a 500. This accepts an absent field and
+  // rejects an explicitly null one.
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MaxLength(150)
   displayName?: string;
@@ -125,16 +141,27 @@ export class UpdateArtistProfileDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(MAX_NUMERIC_10_2)
   basePriceUsd?: number;
 
-  @IsOptional()
+  // Bounded on both axes. Unbounded it accepted 400 entries and stored all
+  // of them — and languages is serialised into every single search result,
+  // so one profile's 400 entries are paid for by every response that lists
+  // it.
+  @ValidateIf((_, value) => value !== undefined)
   @IsArray()
+  @ArrayMaxSize(10)
   @IsString({ each: true })
+  @MaxLength(50, { each: true })
   languages?: string[];
 
-  @IsOptional()
-  @IsObject()
-  socialLinks?: Record<string, string>;
+  // A fixed key set with a URL and a length cap per value — see
+  // SocialLinksDto. @IsObject() validated the container and nothing inside
+  // it, which is how a single value of 50,000 characters got stored.
+  @ValidateIf((_, value) => value !== undefined)
+  @ValidateNested()
+  @Type(() => SocialLinksDto)
+  socialLinks?: SocialLinksDto;
 
   // Numeric, not free text: a deposit has to be comparable and summable,
   // and "half up front" cannot be either. NULL and 0 both mean "none
@@ -142,6 +169,7 @@ export class UpdateArtistProfileDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(MAX_NUMERIC_10_2)
   depositUsd?: number;
 
   @IsOptional()

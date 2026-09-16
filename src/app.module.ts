@@ -23,6 +23,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { JwtAuthGuard } from './auth/guards/auth.guards';
 import { SupportModule } from './support/support.module';
 import { PaymentsModule } from './payments/payments.module';
+import { StripNulBytesPipe } from './common/nul-byte.pipe';
 
 @Module({
   imports: [
@@ -93,6 +94,15 @@ import { PaymentsModule } from './payments/payments.module';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+
+    // Runs BEFORE the ValidationPipe below — global pipes apply in the
+    // order they are registered here. A NUL byte has to be gone before
+    // anything validates or transforms the value, because the string that
+    // reaches SQL is the one the pipe after this produces.
+    {
+      provide: APP_PIPE,
+      useClass: StripNulBytesPipe,
     },
 
     // Global validation pipe — applies to every route automatically
