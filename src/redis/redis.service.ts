@@ -96,6 +96,19 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     this.client.quit();
   }
 
+  /**
+   * The raw ioredis client.
+   *
+   * Exposed for RedisThrottlerStorage, which needs EVAL — one atomic
+   * script rather than the read-decide-write the typed helpers above would
+   * force. Deliberately a method rather than a public field, so a caller
+   * has to mean it, and so it stays undefined-safe until onModuleInit has
+   * run.
+   */
+  getClient(): Redis {
+    return this.client;
+  }
+
   // ----------------------------------------------------------------
   // OTP — 6-digit code, keyed by phone number, TTL 10 minutes
   // ----------------------------------------------------------------
