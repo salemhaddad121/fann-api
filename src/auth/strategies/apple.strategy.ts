@@ -5,6 +5,7 @@ import { Strategy } from 'passport-apple';
 import { AuthService } from '../auth.service';
 import { UserRole } from '../../users/users.types';
 import { requireConfig } from '../../common/config.util';
+import { clientIp } from '../../common/request.util';
 
 @Injectable()
 export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
@@ -35,12 +36,19 @@ export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
     const email = idToken?.email ?? profile?.email;
     const role  = (req.body?.state as UserRole) ?? 'artist';
 
-    const user = await this.authService.findOrCreateOAuthUser({
-      provider:    'apple',
-      providerUid: idToken.sub,
-      email,
-      role,
-    });
+    // See google.strategy.ts — consent rows need the request context.
+    const user = await this.authService.findOrCreateOAuthUser(
+      {
+        provider:    'apple',
+        providerUid: idToken.sub,
+        email,
+        role,
+      },
+      {
+        ipAddress: clientIp(req),
+        userAgent: req.headers?.['user-agent'] ?? null,
+      },
+    );
 
     done(null, user);
   }

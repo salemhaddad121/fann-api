@@ -5,6 +5,7 @@ import { Strategy, VerifyCallback } from 'passport-google-oauth20';
 import { AuthService } from '../auth.service';
 import { UserRole } from '../../users/users.types';
 import { requireConfig } from '../../common/config.util';
+import { clientIp } from '../../common/request.util';
 
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
@@ -32,12 +33,21 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const email    = profile.emails?.[0]?.value;
     const role     = (req.query?.state as UserRole) ?? 'artist';
 
-    const user = await this.authService.findOrCreateOAuthUser({
-      provider:    'google',
-      providerUid: profile.id,
-      email,
-      role,
-    });
+    // The same evidence register() captures. A consent row without the
+    // address and client that made the acceptance is weak evidence, and the
+    // OAuth path now writes those rows too.
+    const user = await this.authService.findOrCreateOAuthUser(
+      {
+        provider:    'google',
+        providerUid: profile.id,
+        email,
+        role,
+      },
+      {
+        ipAddress: clientIp(req),
+        userAgent: req.headers?.['user-agent'] ?? null,
+      },
+    );
 
     done(null, user);
   }
