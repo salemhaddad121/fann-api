@@ -42,6 +42,8 @@ function makeService() {
     getEmailVerifyToken: jest.fn(),
     setEmailVerifyToken: jest.fn(),
     deleteEmailVerifyToken: jest.fn(),
+    deletePasswordResetToken: jest.fn(),
+    getPasswordResetToken: jest.fn(),
     getOtp: jest.fn(),
     setOtp: jest.fn(),
     deleteOtp: jest.fn(),
@@ -481,6 +483,48 @@ describe('AuthService', () => {
         'OTP has expired. Please request a new one.',
       );
       expect(redisService.recordOtpFailure).not.toHaveBeenCalled();
+    });
+  });
+
+  // M10 — the reset form rendered for a dead link, and the only way to find
+  // out it was dead was to fill it in and submit.
+  describe('isPasswordResetTokenValid()', () => {
+    it('reports a live token as valid', async () => {
+      const { service, redisService } = makeService();
+      redisService.getPasswordResetToken.mockResolvedValue('user-1');
+
+      await expect(service.isPasswordResetTokenValid('good')).resolves.toEqual({
+        valid: true,
+      });
+    });
+
+    it('reports an expired or unknown token as invalid', async () => {
+      const { service, redisService } = makeService();
+      redisService.getPasswordResetToken.mockResolvedValue(null);
+
+      await expect(service.isPasswordResetTokenValid('dead')).resolves.toEqual({
+        valid: false,
+      });
+    });
+
+    it('handles a missing token without asking Redis', async () => {
+      const { service, redisService } = makeService();
+
+      await expect(service.isPasswordResetTokenValid('')).resolves.toEqual({
+        valid: false,
+      });
+      expect(redisService.getPasswordResetToken).not.toHaveBeenCalled();
+    });
+
+    it('does not consume the token it checks', async () => {
+      // A check that spent the token would break the very flow the page is
+      // calling it to protect.
+      const { service, redisService } = makeService();
+      redisService.getPasswordResetToken.mockResolvedValue('user-1');
+
+      await service.isPasswordResetTokenValid('good');
+
+      expect(redisService.deletePasswordResetToken).not.toHaveBeenCalled();
     });
   });
 });
