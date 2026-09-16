@@ -4,6 +4,29 @@ import { Knex } from 'knex';
 import { aggregateValue } from '../common/db.util';
 import { UserRecord, UserRole, UserStatus } from './users.types';
 
+/**
+ * Which profile table backs each role. Admins deliberately have neither —
+ * getPublicInfo() already special-cases them, and an admin has no public
+ * profile to fill in.
+ */
+const PROFILE_TABLE_BY_ROLE: Record<UserRole, string | null> = {
+  artist:  'artist_profiles',
+  planner: 'planner_profiles',
+  admin:   null,
+};
+
+/**
+ * The one spelling of an address this codebase stores and compares.
+ *
+ * The local part of an email is case-sensitive per RFC 5321, and no mail
+ * provider anyone uses actually treats it that way. Following the RFC here
+ * would mean two accounts sharing one inbox, which is worse than the
+ * pedantry is worth.
+ */
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 @Injectable()
 export class UsersService {
   constructor(@InjectConnection() private readonly db: Knex) {}
@@ -16,8 +39,20 @@ export class UsersService {
     return row ? this.toRecord(row) : null;
   }
 
+  // Case-insensitive, and it has to be. The column's unique constraint is
+  // case-SENSITIVE, so an exact `.where({ email })` let
+  // AUDIT.ARTIST.X@EXAMPLE.COM register on top of audit.artist.x@example.com
+  // and return 201: two accounts, one mailbox, and a password reset that
+  // reaches whichever of them the user did not mean.
+  //
+  // whereRaw against lower(email) rather than assuming every stored address
+  // is already lowercase — migration 026 normalises what exists, but this
+  // stays correct for a row written by anything that bypasses create().
+  // The functional unique index that migration adds is what keeps it fast.
   async findByEmail(email: string): Promise<UserRecord | null> {
-    const row = await this.db('users').where({ email }).first();
+    const row = await this.db('users')
+      .whereRaw('lower(email) = ?', [normalizeEmail(email)])
+      .first();
     return row ? this.toRecord(row) : null;
   }
 
@@ -64,29 +99,69 @@ export class UsersService {
   // ----------------------------------------------------------------
   // Create
   // ----------------------------------------------------------------
+  // Creates the account AND its profile row, in one transaction.
+  //
+  // It did not, and that was the launch blocker: POST /auth/register wrote
+  // the users row, the consent rows and the verification record, and nothing
+  // anywhere wrote an artist_profiles or planner_profiles row. updateMe()
+  // reads the profile before patching it and throws when it is missing, so
+  // the user could not create one by saving the form either — /profile/edit
+  // was a permanent "Loading…" and GET /artists/me a permanent 404. Nobody
+  // who signed up could finish onboarding.
+  //
+  // One transaction rather than two statements: a user with no profile is
+  // exactly the state that caused this, so it must not be reachable even if
+  // the second insert fails.
   async create(data: {
     email: string;
     passwordHash: string | null;
     role: UserRole;
     phone?: string;
   }): Promise<UserRecord> {
-    const existing = await this.findByEmail(data.email);
+    const email = normalizeEmail(data.email);
+
+    const existing = await this.findByEmail(email);
     if (existing) throw new ConflictException('An account with this email already exists.');
 
     const accountCode = await this.generateAccountCode(data.role);
 
-    const [row] = await this.db('users')
-      .insert({
-        email:         data.email,
-        phone:         data.phone ?? null,
-        password_hash: data.passwordHash,
-        role:          data.role,
-        status:        'pending_review' as UserStatus,
-        account_code:  accountCode,
-      })
-      .returning('*');
+    return this.db.transaction(async (trx) => {
+      let row;
+      try {
+        [row] = await trx('users')
+          .insert({
+            // Stored lowercase. The check above is case-insensitive, but two
+            // registrations racing each other both pass it — the unique
+            // index on lower(email) is what actually decides, and it can
+            // only do that if this is the normalised form.
+            email,
+            phone:         data.phone ?? null,
+            password_hash: data.passwordHash,
+            role:          data.role,
+            status:        'pending_review' as UserStatus,
+            account_code:  accountCode,
+          })
+          .returning('*');
+      } catch (err: any) {
+        // 23505 — the index caught what the read-then-write above could not.
+        if (err?.code === '23505') {
+          throw new ConflictException('An account with this email already exists.');
+        }
+        throw err;
+      }
 
-    return this.toRecord(row);
+      // display_name is left null: nobody has typed one yet, and inventing
+      // a placeholder would put a fake name on a public profile. Migration
+      // 025 drops the NOT NULL that used to make this impossible. An
+      // unnamed profile is invisible to search regardless — new accounts
+      // are 'pending_review' and search only lists 'active' ones.
+      const profileTable = PROFILE_TABLE_BY_ROLE[data.role];
+      if (profileTable) {
+        await trx(profileTable).insert({ user_id: row.id });
+      }
+
+      return this.toRecord(row);
+    });
   }
 
   async linkOAuthAccount(userId: string, provider: string, providerUid: string): Promise<void> {
@@ -123,7 +198,9 @@ export class UsersService {
   // login and everything else keeps using the current email until the
   // change is confirmed via the verification link (applyPendingEmail below).
   async setPendingEmail(userId: string, newEmail: string): Promise<void> {
-    await this.db('users').where({ id: userId }).update({ pending_email: newEmail });
+    await this.db('users')
+      .where({ id: userId })
+      .update({ pending_email: normalizeEmail(newEmail) });
   }
 
   // Called once the verification link for an email change is confirmed —
@@ -139,7 +216,7 @@ export class UsersService {
       await this.db('users')
         .where({ id: userId })
         .update({
-          email: newEmail,
+          email: normalizeEmail(newEmail),
           pending_email: null,
           email_verified_at: this.db.fn.now(),
         });

@@ -22,6 +22,11 @@ import { VerificationService } from '../verification/verification.service';
 
 const BCRYPT_ROUNDS = 12;
 
+/**
+ * The roles a person may give themselves. 'admin' is granted, never chosen.
+ */
+const SELF_SERVICE_ROLES: UserRole[] = ['artist', 'planner'];
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -395,33 +400,81 @@ export class AuthService {
   // ----------------------------------------------------------------
   // OAuth (Google / Apple) — find-or-create
   // ----------------------------------------------------------------
-  async findOrCreateOAuthUser(data: {
-    provider:    string;
-    providerUid: string;
-    email:       string;
-    role:        UserRole;
-  }): Promise<UserRecord> {
+  async findOrCreateOAuthUser(
+    data: {
+      provider:    string;
+      providerUid: string;
+      email:       string;
+      role:        UserRole;
+    },
+    context: ConsentContext = {},
+  ): Promise<UserRecord> {
     // 1. Existing OAuth link
     let user = await this.usersService.findByOAuth(data.provider, data.providerUid);
     if (user) return user;
 
-    // 2. Email already registered — link the OAuth account to it
+    // 2. Email already registered — link the OAuth account to it, but only
+    //    once that account has proved it owns the address.
+    //
+    //    This branch used to link unconditionally, which is one half of an
+    //    account takeover. The other half is that registration does not
+    //    require the emailed link to be opened. Together: an attacker
+    //    registers victim@gmail.com with a password they choose and never
+    //    verifies it; the real owner later signs in with Google, lands here,
+    //    and is handed the attacker's account — which the attacker still has
+    //    the password to. Neither half is exploitable alone, which is why
+    //    both are closed.
     user = await this.usersService.findByEmail(data.email);
     if (user) {
+      if (!user.emailVerifiedAt) {
+        throw new ConflictException(
+          'An unverified account already uses this email address. ' +
+          'Verify it from the link we emailed you, then sign in with Google or Apple.',
+        );
+      }
+
       await this.usersService.linkOAuthAccount(user.id, data.provider, data.providerUid);
       return user;
     }
 
     // 3. Brand new user
+    //
+    //    The role arrives from the OAuth `state` parameter, which is a query
+    //    string anybody can write. Constrained to the two roles a person may
+    //    sign themselves up as: unchecked, ?state=admin created an admin
+    //    account, because UserRole includes 'admin' and nothing between the
+    //    query string and the INSERT ever said otherwise.
+    const role: UserRole = SELF_SERVICE_ROLES.includes(data.role) ? data.role : 'artist';
+
     user = await this.usersService.create({
       email:        data.email,
       passwordHash: null, // social-only login
-      role:         data.role,
+      role,
     });
 
     await this.usersService.linkOAuthAccount(user.id, data.provider, data.providerUid);
 
-    // Social logins get email auto-verified
+    // Consent and the verification record, exactly as the email path does
+    // at register(). Without these a social sign-up had no row in
+    // user_consents at all — no versioned acceptance of the Terms or the
+    // Privacy Policy for anyone who ever used Google or Apple.
+    //
+    // This is only honest if the social buttons carry the same "by
+    // continuing you accept…" notice the registration form does. That is a
+    // Fann---Web change and it is not optional: recording an acceptance
+    // nobody was shown would be worse than recording none.
+    //
+    // Marketing is deliberately absent — it needs a positive act, and there
+    // is no checkbox on an OAuth redirect to provide one.
+    await this.consentService.record(user.id, ['terms', 'privacy'], {
+      ...context,
+      contactEmail: data.email,
+    });
+
+    await this.verificationService.openForSignup(user.id, context);
+
+    // Social logins get email auto-verified — the provider has already
+    // proved the address belongs to whoever is signing in.
     await this.usersService.markEmailVerified(user.id);
 
     return user;

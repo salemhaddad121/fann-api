@@ -28,6 +28,8 @@ function makeService() {
     create: jest.fn(),
     findById: jest.fn(),
     findByEmail: jest.fn(),
+    findByOAuth: jest.fn(),
+    linkOAuthAccount: jest.fn(),
     setPendingEmail: jest.fn(),
     applyPendingEmail: jest.fn(),
     markEmailVerified: jest.fn(),
@@ -211,6 +213,130 @@ describe('AuthService', () => {
       expect(usersService.markEmailVerified).toHaveBeenCalledWith('user-1');
       expect(usersService.applyPendingEmail).not.toHaveBeenCalled();
       expect(result.message).toMatch(/verified successfully/i);
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // H8 — the OAuth path skipped consent, the verification record and the
+  // profile row, and linked to any account matching the email.
+  // ----------------------------------------------------------------
+  describe('findOrCreateOAuthUser()', () => {
+    function oauthData(overrides: Record<string, unknown> = {}) {
+      return {
+        provider: 'google',
+        providerUid: 'google-uid-1',
+        email: 'social@example.com',
+        role: 'planner' as const,
+        ...overrides,
+      };
+    }
+
+    function setup() {
+      const harness = makeService();
+      harness.usersService.findByOAuth.mockResolvedValue(null);
+      harness.usersService.findByEmail.mockResolvedValue(null);
+      harness.usersService.create.mockResolvedValue(makeUser({ id: 'oauth-user' }));
+      return harness;
+    }
+
+    it('records terms and privacy for a new social sign-up', async () => {
+      // Anyone who signed up with Google or Apple previously had no row in
+      // user_consents at all — no versioned acceptance of either document.
+      const { service, consentService } = setup();
+
+      await service.findOrCreateOAuthUser(oauthData() as never);
+
+      expect(consentService.record).toHaveBeenCalledTimes(1);
+      expect(consentService.record.mock.calls[0][1]).toEqual(['terms', 'privacy']);
+    });
+
+    it('does not record marketing consent — there is no checkbox to tick', async () => {
+      const { service, consentService } = setup();
+
+      await service.findOrCreateOAuthUser(oauthData() as never);
+
+      expect(consentService.record.mock.calls[0][1]).not.toContain('marketing');
+    });
+
+    it('opens the verification record, as the email path does', async () => {
+      const { service, verificationService } = setup();
+
+      await service.findOrCreateOAuthUser(oauthData() as never);
+
+      expect(verificationService.openForSignup).toHaveBeenCalledWith('oauth-user', {});
+    });
+
+    it('snapshots the request context onto the consent rows', async () => {
+      const { service, consentService } = setup();
+      const context = { ipAddress: '1.2.3.4', userAgent: 'Safari' };
+
+      await service.findOrCreateOAuthUser(oauthData() as never, context);
+
+      expect(consentService.record.mock.calls[0][2]).toEqual({
+        ...context,
+        contactEmail: 'social@example.com',
+      });
+    });
+
+    it('refuses to link to an existing account that never verified its email', async () => {
+      // The takeover chain: an attacker registers victim@gmail.com with a
+      // password and never verifies. The real owner signs in with Google and
+      // used to be dropped straight into the attacker's account.
+      const { service, usersService } = setup();
+      usersService.findByEmail.mockResolvedValue(
+        makeUser({ id: 'attacker', emailVerifiedAt: null }),
+      );
+
+      await expect(
+        service.findOrCreateOAuthUser(oauthData() as never),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(usersService.linkOAuthAccount).not.toHaveBeenCalled();
+    });
+
+    it('still links to an existing account that HAS verified its email', async () => {
+      const { service, usersService } = setup();
+      usersService.findByEmail.mockResolvedValue(
+        makeUser({ id: 'real-owner', emailVerifiedAt: new Date() }),
+      );
+
+      const user = await service.findOrCreateOAuthUser(oauthData() as never);
+
+      expect(user.id).toBe('real-owner');
+      expect(usersService.linkOAuthAccount).toHaveBeenCalledWith(
+        'real-owner',
+        'google',
+        'google-uid-1',
+      );
+    });
+
+    it('returns an already-linked account without touching consent', async () => {
+      const { service, usersService, consentService } = setup();
+      usersService.findByOAuth.mockResolvedValue(makeUser({ id: 'returning' }));
+
+      const user = await service.findOrCreateOAuthUser(oauthData() as never);
+
+      expect(user.id).toBe('returning');
+      expect(consentService.record).not.toHaveBeenCalled();
+      expect(usersService.create).not.toHaveBeenCalled();
+    });
+
+    // `state` is a query parameter anyone can write, and UserRole includes
+    // 'admin'. Unchecked, GET /auth/google?state=admin created an admin.
+    it('refuses to mint an admin from the OAuth state parameter', async () => {
+      const { service, usersService } = setup();
+
+      await service.findOrCreateOAuthUser(oauthData({ role: 'admin' }) as never);
+
+      expect(usersService.create.mock.calls[0][0].role).toBe('artist');
+    });
+
+    it('honours a legitimate planner role', async () => {
+      const { service, usersService } = setup();
+
+      await service.findOrCreateOAuthUser(oauthData({ role: 'planner' }) as never);
+
+      expect(usersService.create.mock.calls[0][0].role).toBe('planner');
     });
   });
 });
