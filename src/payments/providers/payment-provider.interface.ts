@@ -20,6 +20,29 @@
  * the frontend.
  */
 
+/**
+ * Who to pay, for a flow where the buyer moves the money themselves.
+ *
+ * Structured rather than appended to `instructions`, and that is the whole
+ * point of it existing. An account number inside a prose sentence cannot be
+ * rendered as the most prominent thing on the screen, cannot be given a
+ * copy button, and cannot be checked for presence — which is how the
+ * payment step shipped saying "Transfer $5.55. Quote reference PLN-000015."
+ * and never once saying who to send it to.
+ */
+export interface PaymentRecipient {
+  /** Which service the transfer is made through, e.g. "Whish Money". */
+  service: string;
+  /** The name the account is registered under. Buyers check this. */
+  accountName: string;
+  /** Account number, or the phone number a wallet is keyed by. */
+  accountNumber: string;
+  /** Branch, IBAN or anything else the service needs. Often absent. */
+  reference?: string;
+  /** What to do if the transfer fails, bounces or is reversed. */
+  ifItFails: string;
+}
+
 export interface PaymentIntent {
   /** The provider's own id for this payment. Our idempotency key. */
   providerRef: string;
@@ -27,6 +50,8 @@ export interface PaymentIntent {
   redirectUrl?: string;
   /** Human instructions, for reference-matching flows with no redirect. */
   instructions?: string;
+  /** Where to send the money, for flows where the buyer transfers it. */
+  recipient?: PaymentRecipient;
   expiresAt?: Date;
 }
 

@@ -14,6 +14,20 @@ import {
 import { PaymentProviderRegistry } from '../payments/payment-provider.registry';
 import { IdentityDocumentsService } from '../verification/identity-documents.service';
 
+/**
+ * How long an unreported manual payment intent sits before it is expired.
+ *
+ * Generous on purpose. The cost of expiring one too early is cancelling on
+ * a buyer who did transfer the money; the cost of expiring one too late is
+ * a stale row in a queue for another week. Those are not symmetric, so this
+ * errs long. A bank transfer that is going to arrive has arrived inside 30
+ * days.
+ *
+ * Only ever applied to intents where the buyer never reported a transfer
+ * reference — see doPaymentReconciliation().
+ */
+export const MANUAL_INTENT_ABANDON_DAYS = 30;
+
 export interface MaintenanceNotification {
   userId: string;
   type: string;
@@ -352,9 +366,17 @@ export class SchedulerService {
   //  * Expire intents past intent_expires_at, so an abandoned checkout
   //    stops sitting in the admin queue forever.
   //
-  // Never touches manual payments: those are confirmed by a person, and an
-  // automated sweep expiring them would cancel transfers that are simply
-  // waiting on an admin.
+  // The intent_expires_at sweep never touches manual payments: those are
+  // confirmed by a person, it can take hours, and an automated sweep
+  // expiring them would cancel transfers that are simply waiting on an
+  // admin.
+  //
+  // Manual intents get their OWN, much slower rule instead — see
+  // MANUAL_INTENT_ABANDON_DAYS below. Without one nothing ever expired
+  // them, because manual is the only live provider and it is excluded from
+  // every other path here: an intent from 180 days ago was still sitting at
+  // 'awaiting_provider' after a full run. Every buyer who opens the payment
+  // screen and walks away leaves a row in a queue somebody works daily.
   // ----------------------------------------------------------------
   @Cron('*/15 * * * *')
   async handlePaymentReconciliation() {
@@ -380,6 +402,36 @@ export class SchedulerService {
 
       if (expired.length > 0) {
         this.logger.log(`[Scheduler] Expired ${expired.length} stale payment intent(s)`);
+      }
+
+      // Abandoned manual intents.
+      //
+      // Deliberately narrow, because the risk here is expiring a real
+      // transfer that an admin simply has not got to yet:
+      //
+      //   * 30 days, not the 15 minutes the automated providers get. A
+      //     bank transfer that is going to arrive has arrived by then.
+      //   * only where the buyer never came back to report a reference.
+      //     reference_code is set by the "I've sent the payment" step, so a
+      //     row that has one is a buyer waiting on us, and expiring that
+      //     would be us cancelling on them. A row without one is somebody
+      //     who opened the screen and closed the tab.
+      //
+      // This is an ageing rule, not a removal of the exclusion above — the
+      // human confirmation path is untouched.
+      const abandoned = await this.db('payments')
+        .where('status', 'awaiting_provider')
+        .where('provider', 'manual')
+        .whereNull('reference_code')
+        .whereRaw(`created_at < now() - interval '${MANUAL_INTENT_ABANDON_DAYS} days'`)
+        .update({ status: 'expired', updated_at: this.db.fn.now() })
+        .returning(['id']);
+
+      if (abandoned.length > 0) {
+        this.logger.log(
+          `[Scheduler] Expired ${abandoned.length} abandoned manual intent(s) ` +
+          `older than ${MANUAL_INTENT_ABANDON_DAYS} days with no transfer reported`,
+        );
       }
 
       // Only providers that actually implement polling. The rest are

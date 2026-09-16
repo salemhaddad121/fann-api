@@ -255,6 +255,11 @@ export class SubscriptionsService {
       // redirect if there is a URL, show the instruction screen if not.
       redirect_url: intent.redirectUrl ?? null,
       instructions: intent.instructions ?? null,
+      // Who to send the money to. Structured, so the payment screen can
+      // give it the prominence it needs rather than burying an account
+      // number in a sentence — see PaymentRecipient. Null for providers
+      // that take the money themselves.
+      recipient: intent.recipient ?? null,
       // The reconciliation key the buyer must quote on a transfer. Hidden
       // from the profile UI but prominent here.
       account_code: user?.account_code ?? null,
