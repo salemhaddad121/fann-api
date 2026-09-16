@@ -161,3 +161,12 @@ export class DeleteAccountDto {
   @IsNotEmpty()
   password: string;
 }
+
+// ----------------------------------------------------------------
+// Resend the signup verification email. Unauthenticated by necessity —
+// the whole point is that the account cannot be logged into yet.
+// ----------------------------------------------------------------
+export class ResendVerificationDto {
+  @IsEmail({}, { message: 'Enter a valid email address.' })
+  email: string;
+}

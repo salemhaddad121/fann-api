@@ -27,6 +27,22 @@ const BCRYPT_ROUNDS = 12;
  */
 const SELF_SERVICE_ROLES: UserRole[] = ['artist', 'planner'];
 
+/**
+ * Wrong codes a single phone number may receive before the code is thrown
+ * away and a new one has to be requested. Five leaves room for a genuine
+ * typo or two and still bounds the search space at a rounding error of the
+ * million possible codes.
+ */
+const MAX_OTP_ATTEMPTS = 5;
+
+/**
+ * Error code on the 401 a login gets when the address has not been
+ * verified. Exported so the frontend contract has one source, and so a
+ * rename cannot silently turn the "resend verification" screen back into a
+ * generic "wrong password".
+ */
+export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -112,6 +128,28 @@ export class AuthService {
     if (user.status === 'suspended')  throw new UnauthorizedException('Account suspended.');
     if (user.status === 'banned')     throw new UnauthorizedException('Account banned.');
 
+    // Registration has always ended on "Open it to activate your account,
+    // then come back and log in." It was not true: both audit accounts
+    // logged in immediately having opened nothing, and every authenticated
+    // route worked with emailVerifiedAt still null.
+    //
+    // Enforcing it is also the second half of H8's takeover chain. An
+    // unverified account can no longer be used at all, so registering
+    // someone else's address and waiting for them to arrive via Google buys
+    // nothing.
+    //
+    // The distinct `code` is the point of the shape: 'Invalid credentials'
+    // and 'not verified yet' need completely different screens, and a
+    // client cannot tell them apart by matching on prose.
+    if (!user.emailVerifiedAt) {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        error: 'Unauthorized',
+        code: EMAIL_NOT_VERIFIED,
+        message: 'Verify your email address before signing in. Check your inbox for the link, or request a new one.',
+      });
+    }
+
     await this.usersService.updateLastLogin(user.id);
 
     const tokens = await this.issueTokens(user);
@@ -167,6 +205,30 @@ export class AuthService {
     const url = `${this.configService.get('APP_URL')}/auth/verify-email?token=${token}`;
 
     await this.emailService.sendVerificationEmail(user.email, url);
+  }
+
+  /**
+   * Re-sends the signup verification link.
+   *
+   * Generic response whatever happens, and always the same one — the
+   * endpoint is unauthenticated, so a response that varied by whether the
+   * address existed, or was already verified, would answer "is this person
+   * registered here?" for anyone who asked. Same reasoning as
+   * forgotPassword() above, and as the unsubscribe endpoint.
+   */
+  async resendEmailVerification(email: string): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(email);
+
+    // Nothing to do for an unknown address, an already-verified account, or
+    // a deleted one — and in all three cases the caller is told the same
+    // thing as a success.
+    if (user && !user.emailVerifiedAt && !user.deletedAt) {
+      await this.sendEmailVerification(user);
+    }
+
+    return {
+      message: 'If that address needs verifying, a new link is on its way.',
+    };
   }
 
   async verifyEmail(token: string): Promise<{ message: string }> {
@@ -321,10 +383,16 @@ export class AuthService {
   // name + language must match WHATSAPP_OTP_TEMPLATE_NAME/_LANG.
   // ----------------------------------------------------------------
   async sendOtp(userId: string, phone: string): Promise<{ message: string }> {
-    // Save phone on the user if not already set
-    await this.usersService.updatePhone(userId, phone);
+    // The number is NOT written to the account here. It used to be, which
+    // meant an unverified number sat on the user whether or not a code was
+    // ever entered — type any number, never open WhatsApp, and the account
+    // carries it. verifyOtp() writes it, once the code proves the number
+    // belongs to whoever is holding the session.
 
-    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+    // crypto.randomInt, not Math.random: Math.random is not a CSPRNG, and
+    // its output is predictable from previous draws. A six-digit code is
+    // small enough already without also being guessable.
+    const code = String(crypto.randomInt(100000, 1000000)); // 6 digits
     await this.redisService.setOtp(phone, code);
 
     await this.sendWhatsAppOtp(phone, code);
@@ -388,11 +456,29 @@ export class AuthService {
   ): Promise<{ message: string }> {
     const stored = await this.redisService.getOtp(phone);
 
-    if (!stored)       throw new BadRequestException('OTP has expired. Please request a new one.');
-    if (stored !== code) throw new BadRequestException('Incorrect OTP.');
+    if (!stored) throw new BadRequestException('OTP has expired. Please request a new one.');
 
-    await this.redisService.deleteOtp(phone);
+    if (stored !== code) {
+      // Counted per phone number, and the code is destroyed once the budget
+      // is spent. The route also carries @Throttle, but that limits by IP,
+      // and a six-digit code with a ten-minute life is worth capping on the
+      // axis the attacker cannot change. Twenty-five consecutive wrong codes
+      // used to all return 400 and none return 429.
+      const attempts = await this.redisService.recordOtpFailure(phone);
+      if (attempts >= MAX_OTP_ATTEMPTS) {
+        await this.redisService.deleteOtp(phone);
+        throw new BadRequestException(
+          'Too many incorrect codes. Please request a new one.',
+        );
+      }
+      throw new BadRequestException('Incorrect OTP.');
+    }
+
+    // Written here rather than in sendOtp(): this is the first moment the
+    // number has been shown to belong to the person holding the session.
+    await this.usersService.updatePhone(userId, phone);
     await this.usersService.markPhoneVerified(userId);
+    await this.redisService.deleteOtp(phone);
 
     return { message: 'Phone number verified.' };
   }

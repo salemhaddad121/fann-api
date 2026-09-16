@@ -1,6 +1,6 @@
 import * as bcrypt from 'bcrypt';
-import { BadRequestException, ConflictException } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { AuthService, EMAIL_NOT_VERIFIED } from './auth.service';
 import { UserRecord } from '../users/users.types';
 
 jest.mock('bcrypt');
@@ -30,15 +30,23 @@ function makeService() {
     findByEmail: jest.fn(),
     findByOAuth: jest.fn(),
     linkOAuthAccount: jest.fn(),
+    updateLastLogin: jest.fn(),
+    updatePhone: jest.fn(),
+    markPhoneVerified: jest.fn(),
     setPendingEmail: jest.fn(),
     applyPendingEmail: jest.fn(),
     markEmailVerified: jest.fn(),
   };
-  const jwtService = {};
+  const jwtService = { sign: jest.fn(() => 'signed.jwt.token') };
   const redisService = {
     getEmailVerifyToken: jest.fn(),
     setEmailVerifyToken: jest.fn(),
     deleteEmailVerifyToken: jest.fn(),
+    getOtp: jest.fn(),
+    setOtp: jest.fn(),
+    deleteOtp: jest.fn(),
+    recordOtpFailure: jest.fn(),
+    setRefreshToken: jest.fn(),
   };
   const emailService = {
     sendVerificationEmail: jest.fn(),
@@ -337,6 +345,142 @@ describe('AuthService', () => {
       await service.findOrCreateOAuthUser(oauthData({ role: 'planner' }) as never);
 
       expect(usersService.create.mock.calls[0][0].role).toBe('planner');
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // H9 — registration promised "open it to activate your account", and
+  // then both audit accounts logged in having opened nothing.
+  // ----------------------------------------------------------------
+  describe('login()', () => {
+    it('refuses an account whose email has never been verified', async () => {
+      const { service } = makeService();
+
+      await expect(
+        service.login(makeUser({ emailVerifiedAt: null })),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('carries a distinct code so the client can offer a resend', async () => {
+      // 'wrong password' and 'not verified yet' need different screens, and
+      // a client cannot tell them apart by matching on prose.
+      const { service } = makeService();
+
+      await service.login(makeUser({ emailVerifiedAt: null })).catch((err) => {
+        expect(err.getResponse()).toMatchObject({ code: EMAIL_NOT_VERIFIED });
+      });
+      expect.hasAssertions();
+    });
+
+    it('lets a verified account through', async () => {
+      const { service } = makeService();
+      const user = makeUser({ emailVerifiedAt: new Date() });
+
+      await expect(service.login(user)).resolves.toMatchObject({
+        user: expect.objectContaining({ id: user.id }),
+      });
+    });
+
+    it('still refuses a banned account before it looks at verification', async () => {
+      const { service } = makeService();
+      await expect(
+        service.login(makeUser({ status: 'banned', emailVerifiedAt: null })),
+      ).rejects.toThrow('Account banned.');
+    });
+  });
+
+  describe('resendEmailVerification()', () => {
+    it('sends when the address exists and is unverified', async () => {
+      const { service, usersService, emailService } = makeService();
+      usersService.findByEmail.mockResolvedValue(makeUser({ emailVerifiedAt: null }));
+
+      await service.resendEmailVerification('someone@example.com');
+
+      expect(emailService.sendVerificationEmail).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an unknown address', null],
+      ['an already-verified account', makeUser({ emailVerifiedAt: new Date() })],
+      ['a deleted account', makeUser({ emailVerifiedAt: null, deletedAt: new Date() })],
+    ])('sends nothing for %s', async (_label, found) => {
+      const { service, usersService, emailService } = makeService();
+      usersService.findByEmail.mockResolvedValue(found);
+
+      await service.resendEmailVerification('someone@example.com');
+
+      expect(emailService.sendVerificationEmail).not.toHaveBeenCalled();
+    });
+
+    it('answers identically either way, so it cannot be used to enumerate accounts', async () => {
+      const { service, usersService } = makeService();
+
+      usersService.findByEmail.mockResolvedValue(null);
+      const unknown = await service.resendEmailVerification('nobody@example.com');
+      usersService.findByEmail.mockResolvedValue(makeUser({ emailVerifiedAt: null }));
+      const known = await service.resendEmailVerification('real@example.com');
+
+      expect(unknown).toEqual(known);
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // B4 / M3 — the code was brute-forceable and the phone was saved
+  // before it was ever proved.
+  // ----------------------------------------------------------------
+  describe('OTP', () => {
+    it('does not write the phone number when the code is only sent', async () => {
+      // An unverified number used to sit on the account whether or not a
+      // code was ever entered.
+      const { service, usersService } = makeService();
+
+      await service.sendOtp('user-1', '96170123456').catch(() => undefined);
+
+      expect(usersService.updatePhone).not.toHaveBeenCalled();
+    });
+
+    it('writes the phone number only once the code checks out', async () => {
+      const { service, usersService, redisService } = makeService();
+      redisService.getOtp.mockResolvedValue('123456');
+
+      await service.verifyOtp('user-1', '96170123456', '123456');
+
+      expect(usersService.updatePhone).toHaveBeenCalledWith('user-1', '96170123456');
+      expect(usersService.markPhoneVerified).toHaveBeenCalledWith('user-1');
+    });
+
+    it('counts a wrong code against the phone number', async () => {
+      const { service, redisService } = makeService();
+      redisService.getOtp.mockResolvedValue('123456');
+      redisService.recordOtpFailure.mockResolvedValue(1);
+
+      await expect(service.verifyOtp('user-1', '96170123456', '000000')).rejects.toThrow(
+        'Incorrect OTP.',
+      );
+      expect(redisService.recordOtpFailure).toHaveBeenCalledWith('96170123456');
+    });
+
+    it('destroys the code once the attempt budget is spent', async () => {
+      // Per number, not per IP — the throttler limits by address, and an
+      // attacker with a few of those gets a few budgets against one target.
+      const { service, redisService } = makeService();
+      redisService.getOtp.mockResolvedValue('123456');
+      redisService.recordOtpFailure.mockResolvedValue(5);
+
+      await expect(service.verifyOtp('user-1', '96170123456', '000000')).rejects.toThrow(
+        'Too many incorrect codes. Please request a new one.',
+      );
+      expect(redisService.deleteOtp).toHaveBeenCalledWith('96170123456');
+    });
+
+    it('does not count a failure when the code has simply expired', async () => {
+      const { service, redisService } = makeService();
+      redisService.getOtp.mockResolvedValue(null);
+
+      await expect(service.verifyOtp('user-1', '96170123456', '123456')).rejects.toThrow(
+        'OTP has expired. Please request a new one.',
+      );
+      expect(redisService.recordOtpFailure).not.toHaveBeenCalled();
     });
   });
 });
