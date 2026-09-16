@@ -247,14 +247,26 @@ export class AdminService {
 
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
-    await this.db('users').where({ id: userId }).update({
-      password_hash: passwordHash,
-      updated_at:    this.db.fn.now(),
-    });
 
-    await this.writeAudit(adminId, 'user_password_reset', userId, note);
-    await this.notify(userId, 'password_reset_by_admin', 'Your password was reset', {
-      ...(note && { note }),
+    // All three writes or none. The audit row used to fail on an enum value
+    // that did not exist, AFTER the password change had committed and
+    // BEFORE the temporary password was returned — so the account was left
+    // with a password nobody had seen. The user could not log in with their
+    // old one and the admin had nothing to give them.
+    //
+    // Ordering inside the transaction does not matter now; the point is
+    // that a failure anywhere rolls the password back to what the user
+    // still knows.
+    await this.db.transaction(async (trx) => {
+      await trx('users').where({ id: userId }).update({
+        password_hash: passwordHash,
+        updated_at:    trx.fn.now(),
+      });
+
+      await this.writeAudit(adminId, 'user_password_reset', userId, note, {}, trx);
+      await this.notify(userId, 'password_reset_by_admin', 'Your password was reset', {
+        ...(note && { note }),
+      }, trx);
     });
 
     return { temporaryPassword };
@@ -1033,14 +1045,18 @@ export class AdminService {
   // Internal helpers
   // ================================================================
 
+  // `trx` lets a caller enrol the audit row in a transaction it already
+  // owns. Defaults to the connection, so every existing call site is
+  // unchanged.
   private async writeAudit(
     adminId:  string,
     action:   string,
     targetId: string,
     note?:    string,
     metadata: Record<string, any> = {},
+    trx: Knex | Knex.Transaction = this.db,
   ) {
-    await this.db('audit_log').insert({
+    await trx('audit_log').insert({
       admin_id:  adminId,
       action,
       target_id: targetId,
@@ -1056,8 +1072,9 @@ export class AdminService {
     type:   string,
     title:  string,
     data:   Record<string, any> = {},
+    trx: Knex | Knex.Transaction = this.db,
   ) {
-    await this.db('notifications').insert({
+    await trx('notifications').insert({
       user_id: userId,
       type,
       title,
