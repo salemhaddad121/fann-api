@@ -1,16 +1,19 @@
 import {
+  ArrayMaxSize,
   IsArray,
   IsIn,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { MAX_PAGE, MAX_PAGE_SIZE } from '../../common/pagination.constants';
+import { SocialLinksDto } from '../../common/social-links.dto';
 
 // The fixed set of booker types (Postgres enum `booker_type`). One per booker.
 export const BOOKER_TYPES = [
@@ -24,7 +27,10 @@ export const BOOKER_TYPES = [
 ];
 
 export class UpdatePlannerProfileDto {
-  @IsOptional()
+  // @ValidateIf, not @IsOptional — the latter skips null as well as
+  // undefined, so an explicit `"displayName": null` reached a NOT NULL
+  // column as a 500. Mirrors UpdateArtistProfileDto.
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
   @MaxLength(150)
   displayName?: string;
@@ -49,14 +55,19 @@ export class UpdatePlannerProfileDto {
   @MaxLength(100)
   locationCountry?: string;
 
-  @IsOptional()
+  // Bounded, and not nullable — same reasoning as the artist DTO's
+  // `languages`.
+  @ValidateIf((_, value) => value !== undefined)
   @IsArray()
+  @ArrayMaxSize(10)
   @IsString({ each: true })
+  @MaxLength(50, { each: true })
   eventTypes?: string[];
 
-  @IsOptional()
-  @IsObject()
-  socialLinks?: Record<string, string>;
+  @ValidateIf((_, value) => value !== undefined)
+  @ValidateNested()
+  @Type(() => SocialLinksDto)
+  socialLinks?: SocialLinksDto;
 
   @IsOptional()
   @IsIn(BOOKER_TYPES)
