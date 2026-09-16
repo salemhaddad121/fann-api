@@ -7,6 +7,10 @@ import { RequestMethod } from '@nestjs/common';
 // a compile error (TS2349). This repo's tsconfig leaves the flag off, but
 // Vercel's NestJS preset turns it on — so the build passed locally and in
 // Docker while failing there. This form is callable either way.
+// The comment above is why this form and not `import * as`: it is the one
+// that compiles under both esModuleInterop settings, and the Vercel build
+// breaks without it.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 import cookieParser = require('cookie-parser');
 import helmet from 'helmet';
 import { AppModule } from './app.module';

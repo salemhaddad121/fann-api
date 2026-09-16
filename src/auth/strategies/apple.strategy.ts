@@ -30,7 +30,7 @@ export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
     _refreshToken: string,
     idToken: any,
     profile: any,
-    done: Function,
+    done: (error: unknown, user?: unknown) => void,
   ) {
     // Apple only sends name/email on the very first login
     const email = idToken?.email ?? profile?.email;

@@ -36,7 +36,7 @@ export class MockProvider implements PaymentProvider {
     return this.configService.get<string>('MOCK_PAYMENT_SECRET') ?? 'mock-secret';
   }
 
-  async createIntent(input: CreateIntentInput): Promise<PaymentIntent> {
+  async createIntent(_input: CreateIntentInput): Promise<PaymentIntent> {
     const providerRef = `mock_${randomUUID()}`;
     const appUrl = this.configService.get<string>('APP_URL') ?? 'http://localhost:4000';
 
