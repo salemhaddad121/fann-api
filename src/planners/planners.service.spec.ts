@@ -1,6 +1,6 @@
 import knex from 'knex';
 import { PlannersService } from './planners.service';
-import { createMockDb } from '../test-utils/knex-mock';
+import { createMockDb, createMockQueryBuilder } from '../test-utils/knex-mock';
 
 describe('PlannersService', () => {
   /**
@@ -69,5 +69,81 @@ describe('PlannersService', () => {
 
       expect(result).toEqual([]);
     });
+  });
+});
+
+// ----------------------------------------------------------------
+// C5 — the planner directory was @Public() on both routes, so anyone with
+// a browser and no account could page through every booker on Fann:
+// display name, company name, bio, city, social links. Survivable while
+// every booker was a business; the $5 day pass fills that list with
+// private individuals.
+//
+// The guards are on the controller. What the service owes is the hard
+// company-only floor, on BOTH entry points — a list filter that findOne()
+// does not repeat is the same leak through a different door.
+// ----------------------------------------------------------------
+describe('PlannersService — company-only floor', () => {
+  function conditionsOn(builder: any) {
+    return JSON.stringify([
+      builder.where.mock.calls,
+      builder.whereIn.mock.calls,
+      builder.whereRaw.mock.calls,
+    ]);
+  }
+
+  it('search() filters to companies unconditionally', async () => {
+    const profiles = createMockQueryBuilder();
+    profiles.first.mockResolvedValue({ total: '0' });
+    profiles.mockResolve([]);
+    const db = createMockDb({ 'planner_profiles as pp': profiles });
+
+    await new PlannersService(db).search({} as never);
+
+    expect(profiles.whereIn).toHaveBeenCalledWith('pp.planner_kind', ['company']);
+  });
+
+  it('applies the floor even when the caller passes filters', async () => {
+    // It must not be reachable as a user-supplied parameter — no query
+    // string should be able to widen it.
+    const profiles = createMockQueryBuilder();
+    profiles.first.mockResolvedValue({ total: '0' });
+    profiles.mockResolve([]);
+    const db = createMockDb({ 'planner_profiles as pp': profiles });
+
+    await new PlannersService(db).search({
+      q: 'anything',
+      city: 'Beirut',
+      page: 3,
+    } as never);
+
+    expect(conditionsOn(profiles)).toContain('planner_kind');
+  });
+
+  it('findOne() applies the same floor', async () => {
+    // Without this an artist who kept or guessed a planner UUID reads an
+    // individual's profile directly.
+    const profiles = createMockQueryBuilder();
+    profiles.first.mockResolvedValue(undefined);
+    const db = createMockDb({ 'planner_profiles as pp': profiles });
+
+    await expect(
+      new PlannersService(db).findOne('00000000-0000-4000-8000-000000000001'),
+    ).rejects.toThrow('Planner not found.');
+
+    expect(profiles.whereIn).toHaveBeenCalledWith('pp.planner_kind', ['company']);
+  });
+
+  it('404s rather than 403s for an individual', async () => {
+    // A 403 would confirm the id names a real person, which is the fact
+    // being protected. Matches how the codebase already hides rows a
+    // caller is not entitled to see.
+    const profiles = createMockQueryBuilder();
+    profiles.first.mockResolvedValue(undefined);
+    const db = createMockDb({ 'planner_profiles as pp': profiles });
+
+    await expect(
+      new PlannersService(db).findOne('00000000-0000-4000-8000-000000000001'),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });
