@@ -256,7 +256,7 @@ describe('IdentityDocumentsService.pruneExpiredDocuments()', () => {
 
   it('deletes the file from storage before clearing the key', async () => {
     // The order is load-bearing. Clearing the key first and then failing to
-    // delete would drop our only pointer to the object and orphan a passport
+    // delete would drop our only pointer to the object and orphan an identity document
     // scan in the bucket permanently.
     const { service, docs } = makeS3Service([
       { id: 'doc-1', s3_key: 'identity/u1/id_document-a.jpg', status: 'approved' },
@@ -328,5 +328,87 @@ describe('retention windows', () => {
     // The point of the policy: no window may be effectively "forever".
     expect(RETENTION_DAYS_APPROVED).toBeLessThanOrEqual(365);
     expect(RETENTION_DAYS_REJECTED).toBeLessThanOrEqual(365);
+  });
+});
+
+// ----------------------------------------------------------------
+// C6.1 — a venue proves itself with a trade licence, not a passport and a
+// selfie (D6). A selfie of a building is meaningless, and there is no
+// person behind a room whose face could be matched to an ID.
+//
+// The requirement is a function of the profile rather than a constant, so
+// the checklist a venue sees and the gate that lets it go live cannot
+// disagree about what is outstanding.
+// ----------------------------------------------------------------
+describe('IdentityDocumentsService — what a venue must submit (C6.1)', () => {
+  /** A db where the artist profile does / does not carry the venue category. */
+  function dbFor(isVenue: boolean, approvedKinds: string[] = []) {
+    const profiles = createMockQueryBuilder();
+    profiles.first.mockResolvedValue(isVenue ? { id: 'cat-venue' } : undefined);
+
+    const documents = createMockQueryBuilder();
+    documents.select.mockReturnValue(documents);
+    documents.mockResolve(approvedKinds.map((kind) => ({ kind, status: 'approved' })));
+
+    return createMockDb({
+      'artist_profiles as ap': profiles,
+      id_documents: documents,
+    });
+  }
+
+  it('asks a venue for a trade licence only', async () => {
+    const service = new IdentityDocumentsService(dbFor(true), config);
+
+    await expect(service.requiredKindsFor('venue-1')).resolves.toEqual(['trade_licence']);
+  });
+
+  it('asks a performer for an ID and a selfie', async () => {
+    const service = new IdentityDocumentsService(dbFor(false), config);
+
+    await expect(service.requiredKindsFor('artist-1')).resolves.toEqual([
+      'id_document',
+      'selfie',
+    ]);
+  });
+
+  it('passes a venue that has an approved trade licence', async () => {
+    const service = new IdentityDocumentsService(dbFor(true, ['trade_licence']), config);
+
+    await expect(service.hasCompleteVerification('venue-1')).resolves.toBe(true);
+  });
+
+  it('does not pass a venue on a selfie', async () => {
+    const service = new IdentityDocumentsService(dbFor(true, ['id_document', 'selfie']), config);
+
+    await expect(service.hasCompleteVerification('venue-1')).resolves.toBe(false);
+  });
+
+  it('does not pass a performer on a trade licence', async () => {
+    // The gate has to work in both directions, or "upload anything" becomes
+    // the requirement.
+    const service = new IdentityDocumentsService(dbFor(false, ['trade_licence']), config);
+
+    await expect(service.hasCompleteVerification('artist-1')).resolves.toBe(false);
+  });
+
+  it('still passes a performer with both artefacts', async () => {
+    const service = new IdentityDocumentsService(
+      dbFor(false, ['id_document', 'selfie']),
+      config,
+    );
+
+    await expect(service.hasCompleteVerification('artist-1')).resolves.toBe(true);
+  });
+
+  it('falls back to the person list when the profile cannot be read', async () => {
+    // Conservative direction on purpose: asking a venue for a selfie is an
+    // annoyance an admin resolves, while asking a performer for nothing
+    // would let an unverified one through the go-live gate.
+    const service = new IdentityDocumentsService(dbFor(false), config);
+
+    await expect(service.requiredKindsFor('unknown')).resolves.toEqual([
+      'id_document',
+      'selfie',
+    ]);
   });
 });

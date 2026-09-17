@@ -18,10 +18,33 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import { requireConfig } from '../common/config.util';
 
-export type IdDocumentKind = 'id_document' | 'selfie';
+export type IdDocumentKind = 'id_document' | 'selfie' | 'trade_licence';
 
-/** Both artefacts an artist must submit. Order matters for the UI. */
+/**
+ * What a PERSON must submit: a government ID and a selfie to match it to.
+ *
+ * 'id_document', not 'passport' — any government ID has always been
+ * acceptable here, including a national ID card or a driving licence. The
+ * enum said so from migration 019; only the prose said otherwise.
+ *
+ * Order matters for the UI.
+ */
 export const REQUIRED_KINDS: IdDocumentKind[] = ['id_document', 'selfie'];
+
+/**
+ * What a VENUE must submit: a trade licence, and nothing else.
+ *
+ * A selfie of a building is meaningless, and there is no person behind a
+ * room whose face could be matched to an ID. D6 settles this as the trade
+ * licence reviewed through the existing queue.
+ */
+export const VENUE_REQUIRED_KINDS: IdDocumentKind[] = ['trade_licence'];
+
+/**
+ * The category slug that makes an artist profile a venue rather than a
+ * performer. Migration 029 creates it.
+ */
+export const VENUE_CATEGORY_SLUG = 'venue';
 
 /**
  * How long a decided document's FILE is kept before it is deleted from
@@ -60,7 +83,7 @@ const MAX_BYTES = 15 * 1024 * 1024;
  *
  * Deliberately NOT part of MediaService, even though the presign mechanics
  * look similar. Profile media is written to a public prefix and served
- * from the CDN by URL; a passport scan must never be. These go to a
+ * from the CDN by URL; an identity document must never be. These go to a
  * separate `identity/` prefix, only ever the S3 key is stored, and the
  * only way to view one is a short-lived presigned GET issued to an admin.
  * Keeping them in the same service as public media is how one eventually
@@ -195,7 +218,12 @@ export class IdentityDocumentsService {
 
     const byKind = new Map(rows.map((r) => [r.kind as IdDocumentKind, r]));
 
-    const documents = REQUIRED_KINDS.map((kind) => {
+    // A venue is asked for a trade licence; everyone else for an ID and a
+    // selfie. Driving the checklist off the same function the gate uses
+    // means the two cannot disagree about what is outstanding.
+    const required = await this.requiredKindsFor(userId);
+
+    const documents = required.map((kind) => {
       const row = byKind.get(kind);
       return {
         kind,
@@ -243,7 +271,7 @@ export class IdentityDocumentsService {
    *   deleted accounts — removed on the next run, whatever the status
    *
    * The last has no window at all. Someone who has closed their account has
-   * withdrawn the reason we held their passport, and "we will get to it in
+   * withdrawn the reason we held their identity document, and "we will get to it in
    * 90 days" is not an answer to that.
    *
    * PENDING documents are never touched. They are the ones still waiting to
@@ -320,18 +348,51 @@ export class IdentityDocumentsService {
    * calls this rather than reimplementing the count, so the rule cannot
    * drift between the check and what the artist is told.
    */
+  /**
+   * Which documents THIS account has to produce.
+   *
+   * A function of the profile rather than a constant, because a venue and a
+   * performer are verified by different artefacts. Read from the artist's
+   * categories: a profile carrying the 'venue' category is a room, and a
+   * room has a trade licence rather than a face.
+   *
+   * Falls back to the person's list when the profile or its categories
+   * cannot be read. That is the conservative direction — asking a venue for
+   * a selfie is an annoyance an admin can resolve, while asking a person
+   * for nothing would let an unverified performer through the go-live gate.
+   */
+  async requiredKindsFor(userId: string): Promise<IdDocumentKind[]> {
+    const venue = await this.db('artist_profiles as ap')
+      .join('artist_categories as ac', 'ac.artist_profile_id', 'ap.id')
+      .join('categories as c', 'c.id', 'ac.category_id')
+      .where('ap.user_id', userId)
+      .where('c.slug', VENUE_CATEGORY_SLUG)
+      .select('c.id')
+      .first();
+
+    return venue ? VENUE_REQUIRED_KINDS : REQUIRED_KINDS;
+  }
+
   async hasCompleteVerification(userId: string): Promise<boolean> {
-    const rows = await this.db('id_documents')
-      .where({ user_id: userId, status: 'approved' })
-      .select('kind');
+    const [rows, required] = await Promise.all([
+      this.db('id_documents')
+        .where({ user_id: userId, status: 'approved' })
+        .select('kind'),
+      this.requiredKindsFor(userId),
+    ]);
 
     const approved = new Set(rows.map((r) => r.kind as IdDocumentKind));
-    return REQUIRED_KINDS.every((kind) => approved.has(kind));
+    return required.every((kind) => approved.has(kind));
   }
 }
 
 function describeOutstanding(kind: IdDocumentKind, status: string): string {
-  const label = kind === 'selfie' ? 'selfie' : 'ID document';
+  // "ID document", never "passport". Any government ID is acceptable — a
+  // national ID card or a driving licence as much as a passport — and the
+  // wording is what a user reads when deciding whether the thing in their
+  // wallet counts.
+  const label =
+    kind === 'selfie' ? 'selfie' : kind === 'trade_licence' ? 'trade licence' : 'ID document';
 
   if (status === 'missing') return `Upload your ${label}`;
   if (status === 'rejected') return `Your ${label} was rejected — upload a new one`;
