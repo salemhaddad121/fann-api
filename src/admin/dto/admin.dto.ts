@@ -9,9 +9,11 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { UserRole, UserStatus } from '../../users/users.types';
+import { BookerInterest, UserRole, UserStatus } from '../../users/users.types';
+import { BOOKER_INTERESTS } from '../../auth/dto/auth.dto';
 
 // ----------------------------------------------------------------
 // Shared pagination base — every admin list endpoint extends this
@@ -138,6 +140,25 @@ export class CreateCategoryDto {
   @IsUUID()
   groupId: string;
 
+  /**
+   * Which of the four booker buckets this category answers.
+   *
+   * REQUIRED on create, and that is the point of adding it. The column is
+   * nullable in the schema because Venue legitimately has none — a booker
+   * looking for talent should not be offered rooms — but a category
+   * created from the admin panel with no bucket is silently absent from
+   * every booker's results, with nothing at the time to say so. Making it
+   * a required choice is what stops that gap forming one category at a
+   * time.
+   *
+   * Pass an explicit null for the Venue case.
+   */
+  @ValidateIf((_, value) => value !== null)
+  @IsIn(BOOKER_INTERESTS, {
+    message: `bookerInterest must be one of: ${BOOKER_INTERESTS.join(', ')} (or null for a venue-style category shown to no booker)`,
+  })
+  bookerInterest!: BookerInterest | null;
+
   // Optional — auto-generated from `name` (slugified) if omitted.
   @IsOptional()
   @IsString()
@@ -155,6 +176,16 @@ export class CreateCategoryDto {
 }
 
 export class UpdateCategoryDto {
+  /**
+   * Omit to leave the bucket alone; pass null to clear it. @ValidateIf
+   * rather than @IsOptional so those two stay different — @IsOptional
+   * treats an explicit null as absent, which would make "clear this" a
+   * silent no-op.
+   */
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsIn(BOOKER_INTERESTS)
+  bookerInterest?: BookerInterest | null;
+
   @IsOptional()
   @IsString()
   @MaxLength(100)

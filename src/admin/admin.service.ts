@@ -870,13 +870,24 @@ export class AdminService {
     }
 
     const [category] = await this.db('categories')
-      .insert({ name: dto.name, slug, sort_order: dto.sortOrder ?? 0, group_id: dto.groupId })
+      .insert({
+        name: dto.name,
+        slug,
+        sort_order: dto.sortOrder ?? 0,
+        group_id: dto.groupId,
+        // The booker-facing bucket. Written here because a category
+        // created without one is in none of the four things a booker
+        // picked at signup, and nothing surfaces that at the time — it
+        // only shows up later as an artist nobody can find.
+        booker_interest: dto.bookerInterest ?? null,
+      })
       .returning('*');
 
     await this.writeAudit(adminId, 'category.created', category.id, undefined, {
       name: category.name,
       slug: category.slug,
       group_id: category.group_id,
+      booker_interest: category.booker_interest,
     });
 
     return category;
@@ -912,6 +923,11 @@ export class AdminService {
         slug:       nextSlug,
         sort_order: dto.sortOrder ?? category.sort_order,
         group_id:   dto.groupId ?? category.group_id,
+        // `undefined` leaves it alone, an explicit null clears it. The DTO
+        // keeps those two apart so "show this to no booker" is sayable and
+        // is not confused with "I did not mention it".
+        booker_interest:
+          dto.bookerInterest === undefined ? category.booker_interest : dto.bookerInterest,
       })
       .returning('*');
 
