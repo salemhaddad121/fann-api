@@ -56,12 +56,23 @@ describe('CreateCategoryDto — the booker bucket is a required choice', () => {
     ).resolves.toMatchObject({ bookerInterest: 'musical_acts' });
   });
 
-  it('accepts an explicit null for a venue-style category', async () => {
-    // Venue has no bucket on purpose — a booker looking for talent should
-    // not be offered rooms. That has to stay sayable.
+  it('accepts the venues bucket', async () => {
+    // Venues are a bucket of their own now: a booker looking for a room is
+    // looking for something, and "I need a venue for the wedding" is as
+    // ordinary a search as "I need a band".
     await expect(
-      create({ name: 'Rooftop', groupId: GROUP_ID, bookerInterest: null }),
-    ).resolves.toMatchObject({ bookerInterest: null });
+      create({ name: 'Rooftop', groupId: GROUP_ID, bookerInterest: 'venues' }),
+    ).resolves.toMatchObject({ bookerInterest: 'venues' });
+  });
+
+  it('no longer accepts null', async () => {
+    // It briefly did, for the Venue category, which answered none of the
+    // four performer buckets. With 'venues' a bucket in its own right
+    // nothing legitimately has none, and a category in no bucket is
+    // invisible to every booker with nothing at the time to say so.
+    expect(
+      await rejects(() => create({ name: 'Rooftop', groupId: GROUP_ID, bookerInterest: null })),
+    ).toBe(400);
   });
 
   it('rejects a bucket that is not one of the four', async () => {
@@ -78,12 +89,10 @@ describe('UpdateCategoryDto — omitted and null mean different things', () => {
     await expect(update({ name: 'Renamed' })).resolves.toMatchObject({ name: 'Renamed' });
   });
 
-  it('accepts clearing it with an explicit null', async () => {
-    // @IsOptional() would have treated this as absent, making "show this
-    // to no booker" a silent no-op.
-    await expect(update({ bookerInterest: null })).resolves.toMatchObject({
-      bookerInterest: null,
-    });
+  it('refuses to clear it', async () => {
+    // There is no category that should belong to no bucket, and clearing
+    // one would hide it from every booker silently.
+    expect(await rejects(() => update({ bookerInterest: null }))).toBe(400);
   });
 
   it('accepts changing it', async () => {

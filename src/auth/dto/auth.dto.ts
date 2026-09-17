@@ -36,6 +36,7 @@ export const BOOKER_INTERESTS: BookerInterest[] = [
   'performance_acts',
   'photo_video',
   'djs_and_services',
+  'venues',
 ];
 import { StrictBoolean } from '../../common/boolean.transform';
 

@@ -141,23 +141,21 @@ export class CreateCategoryDto {
   groupId: string;
 
   /**
-   * Which of the four booker buckets this category answers.
+   * Which of the five booker buckets this category answers.
    *
-   * REQUIRED on create, and that is the point of adding it. The column is
-   * nullable in the schema because Venue legitimately has none — a booker
-   * looking for talent should not be offered rooms — but a category
-   * created from the admin panel with no bucket is silently absent from
-   * every booker's results, with nothing at the time to say so. Making it
-   * a required choice is what stops that gap forming one category at a
-   * time.
+   * Required, and no longer nullable through the API. It briefly allowed
+   * null for the Venue category, which answered none of the four
+   * performer buckets — but 'venues' is now a bucket of its own, so
+   * nothing legitimately has none. A category in no bucket is invisible to
+   * every booker and nothing at the time would say so.
    *
-   * Pass an explicit null for the Venue case.
+   * The COLUMN stays nullable so no existing row can fail an upgrade; it
+   * is only new writes that are constrained.
    */
-  @ValidateIf((_, value) => value !== null)
   @IsIn(BOOKER_INTERESTS, {
-    message: `bookerInterest must be one of: ${BOOKER_INTERESTS.join(', ')} (or null for a venue-style category shown to no booker)`,
+    message: `bookerInterest must be one of: ${BOOKER_INTERESTS.join(', ')}`,
   })
-  bookerInterest!: BookerInterest | null;
+  bookerInterest!: BookerInterest;
 
   // Optional — auto-generated from `name` (slugified) if omitted.
   @IsOptional()
@@ -177,14 +175,18 @@ export class CreateCategoryDto {
 
 export class UpdateCategoryDto {
   /**
-   * Omit to leave the bucket alone; pass null to clear it. @ValidateIf
-   * rather than @IsOptional so those two stay different — @IsOptional
-   * treats an explicit null as absent, which would make "clear this" a
-   * silent no-op.
+   * Omit to leave the bucket alone. Null is NOT accepted: with 'venues' a
+   * bucket in its own right, there is no category that should belong to
+   * none, and clearing one would hide it from every booker silently.
+   *
+   * @ValidateIf, not @IsOptional — audit finding H11. @IsOptional skips
+   * validation for null as well as undefined, so an explicit null would
+   * sail through and then be written to the column. This accepts an absent
+   * field and rejects a null one, which is the whole distinction.
    */
-  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @ValidateIf((_, value) => value !== undefined)
   @IsIn(BOOKER_INTERESTS)
-  bookerInterest?: BookerInterest | null;
+  bookerInterest?: BookerInterest;
 
   @IsOptional()
   @IsString()

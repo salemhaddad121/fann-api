@@ -17,7 +17,11 @@ export type BookerInterest =
   | 'musical_acts'
   | 'performance_acts'
   | 'photo_video'
-  | 'djs_and_services';
+  | 'djs_and_services'
+  // A booker looking for a room is looking for something. Venues register
+  // free on the artist side precisely so bookers can find them, so the
+  // interest a booker states at signup has to be able to say so.
+  | 'venues';
 export type UserStatus = 'pending_review' | 'active' | 'suspended' | 'banned';
 
 export interface UserRecord {
