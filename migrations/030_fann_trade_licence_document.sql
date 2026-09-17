@@ -1,0 +1,23 @@
+-- =============================================================
+-- 030: trade_licence as an identity document kind
+--
+-- A venue proves itself with a trade licence, not a passport and a selfie
+-- (D6). A selfie of a building is meaningless.
+--
+-- ORDER MATTERS, AND BLOCKER B3 IS THE CAUTIONARY TALE. resetUserPassword()
+-- wrote an audit_action value that was not in the enum: Postgres raised
+-- 22P02, Nest returned 500, and the password had ALREADY been changed — so
+-- the account was left with a password nobody had seen. Add the value
+-- first, ship the code that writes it second. This migration is the first
+-- half, deliberately alone in its own file so it cannot be reordered
+-- against the code by accident.
+--
+-- The enum was always generic: 019 defines id_document_kind as
+-- ('id_document', 'selfie') — 'id_document', not 'passport'. An artist has
+-- always been able to upload any government ID. Only the comments and some
+-- copy said passport, and those are corrected alongside this.
+--
+-- Renumbered from the spec's 027 — see 028 for why.
+-- =============================================================
+
+ALTER TYPE id_document_kind ADD VALUE IF NOT EXISTS 'trade_licence';
