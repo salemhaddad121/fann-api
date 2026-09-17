@@ -201,3 +201,108 @@ describe('AdminService.resetUserPassword()', () => {
     );
   });
 });
+
+// ----------------------------------------------------------------
+// C6 follow-through: approving a document sets is_verified only when
+// EVERY artefact that profile needs is approved — and what it needs is
+// not the same for a performer and a venue.
+//
+// hasRequiredApproved() hardcoded id_document + selfie. With the trade
+// licence added, an approved venue licence could never set the flag, so a
+// venue would sit unverified however many documents it sent and could
+// never be taken live.
+// ----------------------------------------------------------------
+describe('AdminService.reviewDocument() — venue vs performer verification', () => {
+  function setup(opts: { isVenue: boolean; approvedKinds: string[] }) {
+    const documents = createMockQueryBuilder();
+    documents.first.mockResolvedValue({
+      id: 'doc-1',
+      user_id: 'user-1',
+      kind: 'trade_licence',
+      status: 'pending',
+    });
+    documents.mockResolve(opts.approvedKinds.map((kind) => ({ kind })));
+
+    const profiles = createMockQueryBuilder();
+    // The venue-category lookup joins through artist_profiles as ap.
+    profiles.first.mockResolvedValue(opts.isVenue ? { id: 'cat-venue' } : undefined);
+
+    const artistProfiles = createMockQueryBuilder();
+
+    const db = createMockDb({
+      id_documents: documents,
+      'artist_profiles as ap': profiles,
+      artist_profiles: artistProfiles,
+      notifications: createMockQueryBuilder(),
+      audit_log: createMockQueryBuilder(),
+    });
+
+    const service = new AdminService(
+      db,
+      verificationStub as any,
+      subscriptionsStub as any,
+      identityStub as any,
+    );
+    return { service, artistProfiles };
+  }
+
+  it('verifies a venue on an approved trade licence alone', async () => {
+    const { service, artistProfiles } = setup({
+      isVenue: true,
+      approvedKinds: ['trade_licence'],
+    });
+
+    await service.reviewDocument('admin-1', 'doc-1', { decision: 'approved' } as any);
+
+    expect(artistProfiles.update).toHaveBeenCalledWith({ is_verified: true });
+  });
+
+  it('does not verify a performer on a trade licence', async () => {
+    // The requirement has to bind in both directions, or "upload anything"
+    // becomes the rule.
+    const { service, artistProfiles } = setup({
+      isVenue: false,
+      approvedKinds: ['trade_licence'],
+    });
+
+    await service.reviewDocument('admin-1', 'doc-1', { decision: 'approved' } as any);
+
+    expect(artistProfiles.update).toHaveBeenCalledWith({ is_verified: false });
+  });
+
+  it('still requires both artefacts from a performer', async () => {
+    const { service, artistProfiles } = setup({
+      isVenue: false,
+      approvedKinds: ['id_document'],
+    });
+
+    await service.reviewDocument('admin-1', 'doc-1', { decision: 'approved' } as any);
+
+    expect(artistProfiles.update).toHaveBeenCalledWith({ is_verified: false });
+  });
+
+  it('verifies a performer once both are approved', async () => {
+    const { service, artistProfiles } = setup({
+      isVenue: false,
+      approvedKinds: ['id_document', 'selfie'],
+    });
+
+    await service.reviewDocument('admin-1', 'doc-1', { decision: 'approved' } as any);
+
+    expect(artistProfiles.update).toHaveBeenCalledWith({ is_verified: true });
+  });
+
+  it('clears the flag on a rejection whatever else is approved', async () => {
+    const { service, artistProfiles } = setup({
+      isVenue: true,
+      approvedKinds: ['trade_licence'],
+    });
+
+    await service.reviewDocument('admin-1', 'doc-1', {
+      decision: 'rejected',
+      rejectionReason: 'Illegible',
+    } as any);
+
+    expect(artistProfiles.update).toHaveBeenCalledWith({ is_verified: false });
+  });
+});
