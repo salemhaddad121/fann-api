@@ -736,6 +736,91 @@ export class AdminService {
   // category", which means the totals will not sum to the booking count.
   private static readonly CONFIRMED_BOOKING_STATUSES = ['accepted', 'completed'];
 
+  /**
+   * What bookers said they came for, at signup.
+   *
+   * This is the ONLY consumer of planner_interests. The buckets do not
+   * filter anybody's search — a booker uses the filters on /search like
+   * everyone else — they exist so there is an honest answer to "what are
+   * people actually coming here to book", which is a question the roster
+   * and the advertising product both depend on.
+   *
+   * THE DENOMINATOR IS THE WHOLE POINT, so it is returned rather than left
+   * to be guessed. The question is multi-select: a wedding wants a band AND
+   * a photographer AND a DJ. So the per-bucket counts deliberately sum to
+   * MORE than the number of bookers, and a percentage computed against the
+   * sum of the counts would be meaningless. `share` is the fraction of
+   * ANSWERING BOOKERS who picked each bucket, which is the number that can
+   * be read as "60% of bookers want photo & video".
+   *
+   * `unanswered` is the bookers who predate the question (migration 028)
+   * and have not been prompted yet. Reported separately rather than folded
+   * into the denominator: counting them as "wanted nothing" would drag
+   * every share down for a reason that has nothing to do with demand.
+   */
+  async getBookerInterests() {
+    const [rows, answeringRow, totalRow] = await Promise.all([
+      // One row per (bucket, kind). Grouping by kind here rather than
+      // running two queries keeps the individual/company split free.
+      this.db('planner_interests as pi')
+        .join('planner_profiles as pp', 'pp.id', 'pi.planner_profile_id')
+        .select('pi.interest')
+        .select('pp.planner_kind')
+        .count('pi.planner_profile_id as count')
+        .groupBy('pi.interest', 'pp.planner_kind'),
+
+      // Distinct bookers who answered at all — the denominator.
+      this.db('planner_interests')
+        .countDistinct('planner_profile_id as count')
+        .first(),
+
+      this.db('planner_profiles').count('id as count').first(),
+    ]);
+
+    const answering = aggregateValue(answeringRow, 'count');
+    const totalBookers = aggregateValue(totalRow, 'count');
+
+    const byInterest = new Map<
+      string,
+      { interest: string; total: number; individual: number; company: number }
+    >();
+
+    for (const row of rows as { interest: string; planner_kind: string | null; count: string | number }[]) {
+      const entry = byInterest.get(row.interest) ?? {
+        interest: row.interest,
+        total: 0,
+        individual: 0,
+        company: 0,
+      };
+      const n = Number(row.count);
+      entry.total += n;
+      if (row.planner_kind === 'company') entry.company += n;
+      else if (row.planner_kind === 'individual') entry.individual += n;
+      // A null kind counts toward the total but neither split — it is a
+      // booker who answered the interest question before the kind question
+      // existed. Silently bucketing them as individuals would invent data.
+      byInterest.set(row.interest, entry);
+    }
+
+    const interests = [...byInterest.values()]
+      .map((e) => ({
+        ...e,
+        // Of the bookers who answered, the fraction who picked this one.
+        share: answering > 0 ? e.total / answering : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      interests,
+      /** Bookers who answered the question. The denominator for `share`. */
+      answering,
+      /** Every booker profile, answered or not. */
+      totalBookers,
+      /** Bookers who predate the question and have not been prompted. */
+      unanswered: Math.max(0, totalBookers - answering),
+    };
+  }
+
   async getTopBookedCategories(limit = 5) {
     const rows = await this.db('bookings as b')
       .join('artist_profiles as ap', 'ap.user_id', 'b.artist_id')

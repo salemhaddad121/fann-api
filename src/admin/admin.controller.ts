@@ -87,6 +87,15 @@ export class AdminController {
     return this.adminService.getTopBookedCategories(5);
   }
 
+  // GET /admin/analytics/booker-interests
+  // What bookers said they came for at signup. Multi-select, so the counts
+  // sum to more than the number of bookers — read `share` against
+  // `answering`, both of which the service returns for that reason.
+  @Get('analytics/booker-interests')
+  getBookerInterests() {
+    return this.adminService.getBookerInterests();
+  }
+
   // GET /admin/analytics/booker-types
   @Get('analytics/booker-types')
   getTopBookerTypes() {
