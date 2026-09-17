@@ -68,6 +68,13 @@ export class AuthService {
       passwordHash,
       role:         dto.role,
       phone:        dto.phone,
+      // Booker answers, ignored for an artist. usersService.create() writes
+      // these inside the same transaction as the user and the profile — a
+      // booker whose kind or interests did not save is the half-registered
+      // state that blocker all over again.
+      plannerKind:  dto.plannerKind,
+      bookerType:   dto.bookerType,
+      interests:    dto.interests,
     });
 
     // Recorded before the verification email so a failure to send can't
