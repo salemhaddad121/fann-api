@@ -1,0 +1,30 @@
+-- =============================================================
+-- 031: 'venues' as a fifth booker interest — the enum value only
+--
+-- A booker looking for a room is looking for something. "I need a venue
+-- for the wedding" is as ordinary a search as "I need a band", and until
+-- now the signup question could not express it: the four buckets were all
+-- kinds of performer, and the Venue category deliberately answered none of
+-- them.
+--
+-- That was the right call while venues were supply-only. It is wrong now
+-- that bookers are meant to find them: a venue registers free on the
+-- artist side precisely so bookers can see it, and the interest a booker
+-- states at signup should be able to say so.
+--
+-- ALONE IN ITS OWN FILE, AND THAT IS NOT STYLE. Postgres refuses to USE a
+-- new enum value in the transaction that added it:
+--
+--   ERROR:  unsafe use of new value "venues" of enum type booker_interest
+--   HINT:   New enum values must be committed before they can be used.
+--
+-- migrate.sh runs each file with --single-transaction, so an ALTER TYPE
+-- and the UPDATE that uses it cannot share a file. Verified against a
+-- scratch copy before writing this. Migration 032 does the UPDATE.
+--
+-- Same shape as blocker B3, which is the reason to be careful here: there,
+-- an enum value the app wrote but the type lacked raised 22P02 and
+-- returned 500 after the write had already committed.
+-- =============================================================
+
+ALTER TYPE booker_interest ADD VALUE IF NOT EXISTS 'venues';
