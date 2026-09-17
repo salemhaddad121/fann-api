@@ -1,4 +1,23 @@
 export type UserRole   = 'artist' | 'planner' | 'admin';
+
+/**
+ * Individual vs company, for a booker. Null until answered — existing
+ * bookers predate the question and are prompted rather than locked out.
+ */
+export type PlannerKind = 'individual' | 'company';
+
+/**
+ * What a booker said they were looking for at signup. Multi-select.
+ *
+ * A booker-facing axis, deliberately not the artist-facing category_groups:
+ * artists classify by craft and bookers search by need, and a DJ is a
+ * musician to himself and a service to a venue.
+ */
+export type BookerInterest =
+  | 'musical_acts'
+  | 'performance_acts'
+  | 'photo_video'
+  | 'djs_and_services';
 export type UserStatus = 'pending_review' | 'active' | 'suspended' | 'banned';
 
 export interface UserRecord {

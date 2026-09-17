@@ -125,6 +125,12 @@ const RUN = process.env.SKIP_INTEGRATION_TESTS !== '1';
         role,
         acceptedTerms: true,
         acceptedPrivacy: true,
+        // The booker questionnaire (C2) is mandatory for a planner and
+        // must not be sent for an artist — the artist branch is still one
+        // step by design.
+        ...(role === 'planner'
+          ? { plannerKind: 'individual', interests: ['musical_acts'] }
+          : {}),
       })
       .expect(201);
 
@@ -220,6 +226,8 @@ const RUN = process.env.SKIP_INTEGRATION_TESTS !== '1';
         email: email.toUpperCase(),
         password: 'Fann@dev2025',
         role: 'planner',
+        plannerKind: 'individual',
+        interests: ['musical_acts'],
         acceptedTerms: true,
         acceptedPrivacy: true,
       })

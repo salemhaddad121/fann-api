@@ -1,15 +1,42 @@
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   Equals,
+  IsArray,
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
-import { UserRole } from '../../users/users.types';
+import { BookerInterest, PlannerKind, UserRole } from '../../users/users.types';
+
+/** Mirrors the planner_kind enum from migration 028. */
+export const PLANNER_KINDS: PlannerKind[] = ['individual', 'company'];
+
+/** Mirrors the booker_type enum from migration 011. */
+export const BOOKER_TYPES = [
+  'Event Planner',
+  'Venue',
+  'Restaurant',
+  'Bar',
+  'Wedding Planner',
+  'University',
+  'Other',
+];
+
+/** Mirrors the booker_interest enum from migration 028. */
+export const BOOKER_INTERESTS: BookerInterest[] = [
+  'musical_acts',
+  'performance_acts',
+  'photo_video',
+  'djs_and_services',
+];
 import { StrictBoolean } from '../../common/boolean.transform';
 
 // ----------------------------------------------------------------
@@ -61,6 +88,49 @@ export class RegisterDto {
   @StrictBoolean()
   @IsBoolean({ message: 'acceptedMarketing must be true or false.' })
   acceptedMarketing?: boolean;
+
+  // ----------------------------------------------------------------
+  // The booker questionnaire. Asked at signup because that is the one
+  // moment completion rates are highest, and because everything
+  // downstream — who can find whom, what admin sees, what the advertising
+  // product can target — depends on having the answers.
+  //
+  // @ValidateIf on the role rather than @IsOptional, so these are required
+  // of a booker and simply absent for an artist. The artist branch stays
+  // exactly one step: artists are the supply side and every extra field
+  // costs roster.
+  // ----------------------------------------------------------------
+
+  /** Individual or company. Required for a booker. */
+  @ValidateIf((o) => o.role === 'planner')
+  @IsEnum(PLANNER_KINDS, {
+    message: 'Tell us whether you are booking as an individual or a company.',
+  })
+  plannerKind?: PlannerKind;
+
+  /**
+   * What kind of company. Required only when plannerKind is 'company' —
+   * an individual has no company type, and asking would be nonsense.
+   */
+  @ValidateIf((o) => o.role === 'planner' && o.plannerKind === 'company')
+  @IsIn(BOOKER_TYPES, { message: 'Choose the kind of organisation you book for.' })
+  bookerType?: string;
+
+  /**
+   * What they came looking for. Multi-select, minimum one (Q1) —
+   * single-select would misdescribe most real bookings, where a wedding
+   * wants a band AND a photographer AND a DJ.
+   *
+   * @ValidateIf rather than @IsOptional so an explicit null is rejected
+   * rather than treated as absent; @ArrayMaxSize because there are only
+   * four buckets and a longer list is a client sending nonsense.
+   */
+  @ValidateIf((o) => o.role === 'planner')
+  @IsArray()
+  @ArrayNotEmpty({ message: 'Choose at least one thing you are looking for.' })
+  @ArrayMaxSize(BOOKER_INTERESTS.length)
+  @IsIn(BOOKER_INTERESTS, { each: true })
+  interests?: BookerInterest[];
 }
 
 // ----------------------------------------------------------------
