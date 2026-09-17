@@ -20,6 +20,16 @@ import {
 } from './dto/messaging.dto';
 import { UserRecord } from '../users/users.types';
 
+/**
+ * How many message requests one artist may have waiting for an answer.
+ *
+ * The accept step is what makes artist-initiated messaging safe for
+ * planners; this is what stops an artist queueing one to every company on
+ * the platform before anybody answers. Ten is enough for a real week of
+ * outreach and far short of a mailshot.
+ */
+const MAX_PENDING_ARTIST_REQUESTS = 10;
+
 @Injectable()
 export class MessagingService {
   constructor(@InjectConnection() private readonly db: Knex) {}
@@ -190,14 +200,54 @@ export class MessagingService {
       return existing;
     }
 
-    const [conversation] = await this.db('conversations')
-      .insert({
-        artist_id:    artist.id,
-        planner_id:   plannerId,
-        initiated_by: artist.id,
-        status:       'pending',
-      })
-      .returning('*');
+    // Cap on pending outbound requests.
+    //
+    // An artist-initiated thread is free by design — sending a request is an
+    // artist using their own inbox, not something they bought — and it lands
+    // as a request the planner must accept. That accept step is the spam
+    // control, and it stops being one if an artist can queue a request to
+    // every company on the platform in an afternoon.
+    //
+    // Counted, then inserted, UNDER A LOCK. A plain count-then-insert is the
+    // defect this codebase already had twice (the media cap and the booking
+    // status race): under READ COMMITTED a second transaction's count does
+    // not see the first's uncommitted row, so two requests at the limit both
+    // pass. A cap of ten cannot be a unique index, so the advisory lock is
+    // what serialises it — transaction-scoped, released on commit or
+    // rollback, and keyed on the artist so two artists never wait on each
+    // other.
+    //
+    // Only PENDING requests count. Accepted threads are conversations the
+    // planner chose to have, and declined ones are terminal; neither should
+    // consume the artist's budget for new ones.
+    const conversation = await this.db.transaction(async (trx) => {
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [
+        `conversation-requests:${artist.id}`,
+      ]);
+
+      const pendingRow = await trx('conversations')
+        .where({ artist_id: artist.id, initiated_by: artist.id, status: 'pending' })
+        .count('id as pending')
+        .first();
+
+      if (aggregateValue(pendingRow, 'pending') >= MAX_PENDING_ARTIST_REQUESTS) {
+        throw new ForbiddenException(
+          `You have ${MAX_PENDING_ARTIST_REQUESTS} message requests still waiting for a reply. ` +
+          'Wait for one to be answered before sending another.',
+        );
+      }
+
+      const [row] = await trx('conversations')
+        .insert({
+          artist_id:    artist.id,
+          planner_id:   plannerId,
+          initiated_by: artist.id,
+          status:       'pending',
+        })
+        .returning('*');
+
+      return row;
+    });
 
     const artistProfile = await this.db('artist_profiles')
       .where({ user_id: artist.id })
