@@ -7,7 +7,12 @@ import { InjectConnection } from 'nest-knexjs';
 import { Knex } from 'knex';
 import { VerificationService } from '../verification/verification.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
-import { IdentityDocumentsService } from '../verification/identity-documents.service';
+import {
+  IdentityDocumentsService,
+  REQUIRED_KINDS,
+  VENUE_REQUIRED_KINDS,
+  VENUE_CATEGORY_SLUG,
+} from '../verification/identity-documents.service';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
 import { aggregateValue } from '../common/db.util';
@@ -28,20 +33,36 @@ import {
 const BCRYPT_ROUNDS = 12;
 
 /**
- * Whether a user has BOTH identity artefacts approved.
+ * Whether a user has approved EVERY artefact their kind of profile needs.
  *
- * Duplicated from IdentityDocumentsService.hasCompleteVerification()
- * on purpose: this one runs inside the review transaction, so it sees the
- * row that was just updated. Calling the service would read through a
- * different connection and miss it.
+ * Duplicated from IdentityDocumentsService.hasCompleteVerification() on
+ * purpose: this one runs inside the review transaction, so it sees the row
+ * that was just updated. Calling the service would read through a different
+ * connection and miss it.
+ *
+ * Which artefacts those are is not fixed. A performer needs an ID document
+ * and a selfie; a venue needs a trade licence and nothing else, because a
+ * selfie of a building is meaningless (D6). Hardcoding the performer's pair
+ * here — which this did — meant an approved trade licence could never set
+ * the flag, so a venue would sit unverified however many documents it sent.
  */
-async function hasBothApproved(trx: Knex.Transaction, userId: string): Promise<boolean> {
-  const rows = await trx('id_documents')
-    .where({ user_id: userId, status: 'approved' })
-    .select('kind');
+async function hasRequiredApproved(trx: Knex.Transaction, userId: string): Promise<boolean> {
+  const [rows, venue] = await Promise.all([
+    trx('id_documents')
+      .where({ user_id: userId, status: 'approved' })
+      .select('kind'),
+    trx('artist_profiles as ap')
+      .join('artist_categories as ac', 'ac.artist_profile_id', 'ap.id')
+      .join('categories as c', 'c.id', 'ac.category_id')
+      .where('ap.user_id', userId)
+      .where('c.slug', VENUE_CATEGORY_SLUG)
+      .select('c.id')
+      .first(),
+  ]);
 
   const approved = new Set(rows.map((r) => r.kind as string));
-  return approved.has('id_document') && approved.has('selfie');
+  const required = venue ? VENUE_REQUIRED_KINDS : REQUIRED_KINDS;
+  return required.every((kind) => approved.has(kind));
 }
 
 
@@ -333,16 +354,19 @@ export class AdminService {
         reviewed_at:      trx.fn.now(),
       });
 
-      // The verified badge means "identity confirmed", which now takes BOTH
-      // an ID document and a selfie. Flipping it on the first approval
-      // would badge an artist who has only submitted half of it — and the
-      // badge is exactly what a booker reads as assurance.
+      // is_verified means "identity confirmed", which takes every artefact
+      // that kind of profile requires — an ID document AND a selfie for a
+      // performer, a trade licence for a venue. Flipping it on the first
+      // approval would mark an artist who has submitted half of it.
       //
-      // Rejecting either one clears it, so a badge cannot survive the
+      // Rejecting any one of them clears it, so the flag cannot survive the
       // document it was based on being withdrawn.
+      //
+      // The user-facing badge is gone (C1), but the flag is not: admin
+      // still uses it as the go-live gate.
       const verified =
         dto.decision === 'approved' &&
-        (await hasBothApproved(trx, doc.user_id));
+        (await hasRequiredApproved(trx, doc.user_id));
 
       await trx('artist_profiles')
         .where({ user_id: doc.user_id })
