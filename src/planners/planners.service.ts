@@ -4,12 +4,25 @@ import { Knex } from 'knex';
 import { aggregateValue } from '../common/db.util';
 import { SearchPlannersDto, UpdatePlannerProfileDto } from './dto/planners.dto';
 
+/**
+ * The planner kinds that may appear in the artist-facing directory.
+ *
+ * A list rather than a scalar because whereIn is what gives the NULL
+ * exclusion described at the call sites, and because a future kind
+ * ('agency', say) should be added here and nowhere else.
+ */
+const COMPANY_KINDS = ['company'];
+
 @Injectable()
 export class PlannersService {
   constructor(@InjectConnection() private readonly db: Knex) {}
 
   // ----------------------------------------------------------------
-  // Search / list planners (public) — mirrors ArtistsService.search()
+  // Search / list planners — artists and admins only, companies only.
+  //
+  // Not a mirror of ArtistsService.search() any more, and the comment that
+  // said it was is what kept the route public for so long. See the
+  // controller.
   // ----------------------------------------------------------------
   async search(dto: SearchPlannersDto) {
     const page = dto.page ?? 1;
@@ -19,6 +32,16 @@ export class PlannersService {
     let query = this.db('planner_profiles as pp')
       .join('users as u', 'u.id', 'pp.user_id')
       .where('u.status', 'active')
+      // Companies only, and unconditionally. A hard floor in the query
+      // rather than a filter the caller passes, so no parameter can widen
+      // it and no future endpoint can forget it.
+      //
+      // whereIn EXCLUDES NULL, and that is the behaviour wanted rather than
+      // a case to fix: planner_kind is null for every booker who registered
+      // before migration 028, and until they answer the prompt the safe
+      // reading of "we do not know if this is a person" is "do not list
+      // them". Do not soften this to a NULL-tolerant clause.
+      .whereIn('pp.planner_kind', COMPANY_KINDS)
       .select(
         'pp.id',
         'pp.user_id',
@@ -121,6 +144,13 @@ export class PlannersService {
       .join('users as u', 'u.id', 'pp.user_id')
       .where('pp.id', plannerProfileId)
       .where('u.status', 'active')
+      // The same company-only floor as search(). Without it a held or
+      // guessed UUID reads an individual's profile directly — the list leak
+      // through a different door. A miss falls through to the 404 below
+      // rather than a 403, matching how this codebase already hides rows a
+      // caller is not entitled to see: a 403 would confirm the id names a
+      // real person.
+      .whereIn('pp.planner_kind', COMPANY_KINDS)
       .select(
         'pp.id',
         'pp.user_id',

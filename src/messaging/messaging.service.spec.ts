@@ -489,3 +489,112 @@ describe('MessagingService.listConversations() — one row per conversation', ()
     expect(source).not.toContain('latest_at');
   });
 });
+
+// ----------------------------------------------------------------
+// C5.4 — a cap on pending artist-initiated requests.
+//
+// An artist-initiated thread is free by design and lands as a request the
+// planner must accept. That accept step is the spam control, and it stops
+// being one if an artist can queue a request to every company on the
+// platform before anybody answers.
+// ----------------------------------------------------------------
+describe('MessagingService.createConversation() — artist request cap', () => {
+  function setup(pendingCount: number) {
+    const users = createMockQueryBuilder();
+    users.first.mockResolvedValue({ id: 'planner-9', role: 'planner', status: 'active' });
+
+    const conversations = createMockQueryBuilder();
+    // No existing thread with this planner, then the pending-request count.
+    conversations.first
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ pending: String(pendingCount) });
+    conversations.returning.mockResolvedValue([{ id: 'conv-new', status: 'pending' }]);
+
+    const artistProfiles = createMockQueryBuilder();
+    artistProfiles.first.mockResolvedValue({ display_name: 'Karim' });
+
+    const db = createMockDb({
+      users,
+      conversations,
+      artist_profiles: artistProfiles,
+      notifications: createMockQueryBuilder(),
+    });
+
+    const service = new MessagingService(db);
+    const artist = makeUser({ id: 'artist-1', role: 'artist' });
+    return { service, artist, db, conversations };
+  }
+
+  it('lets a request through below the cap', async () => {
+    const { service, artist, conversations } = setup(9);
+
+    await service.createConversation(artist, { plannerId: 'planner-9' } as never);
+
+    expect(conversations.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending', initiated_by: 'artist-1' }),
+    );
+  });
+
+  it('refuses the eleventh pending request', async () => {
+    const { service, artist, conversations } = setup(10);
+
+    await expect(
+      service.createConversation(artist, { plannerId: 'planner-9' } as never),
+    ).rejects.toThrow(/still waiting for a reply/);
+
+    expect(conversations.insert).not.toHaveBeenCalled();
+  });
+
+  it('counts only PENDING requests this artist started', async () => {
+    // Accepted threads are conversations the planner chose to have and
+    // declined ones are terminal; neither should consume the budget.
+    const { service, artist, conversations } = setup(0);
+
+    await service.createConversation(artist, { plannerId: 'planner-9' } as never);
+
+    const counted = conversations.where.mock.calls.some(
+      ([arg]: any[]) =>
+        arg &&
+        arg.status === 'pending' &&
+        arg.initiated_by === 'artist-1' &&
+        arg.artist_id === 'artist-1',
+    );
+    expect(counted).toBe(true);
+  });
+
+  it('serialises the count and the insert under a per-artist lock', async () => {
+    // A plain count-then-insert is the defect this codebase already had
+    // twice: under READ COMMITTED the second transaction's count does not
+    // see the first's uncommitted row, so two requests at the limit both
+    // pass. A cap of ten cannot be a unique index.
+    const { service, artist, db } = setup(0);
+
+    await service.createConversation(artist, { plannerId: 'planner-9' } as never);
+
+    expect(db.transaction).toHaveBeenCalled();
+    expect(db.raw).toHaveBeenCalledWith(
+      expect.stringContaining('pg_advisory_xact_lock'),
+      ['conversation-requests:artist-1'],
+    );
+  });
+
+  it('does not cap a planner opening a thread', async () => {
+    // Planners pay to open threads; the cap is about the free direction.
+    const users = createMockQueryBuilder();
+    users.first.mockResolvedValue({ id: 'artist-9', role: 'artist', status: 'active' });
+    const conversations = createMockQueryBuilder();
+    conversations.first.mockResolvedValue(undefined);
+    conversations.returning.mockResolvedValue([{ id: 'conv-p' }]);
+    const db = createMockDb({ users, conversations });
+
+    await new MessagingService(db).createConversation(
+      makeUser({ id: 'planner-1', role: 'planner' }),
+      { artistId: 'artist-9' } as never,
+    );
+
+    expect(db.raw).not.toHaveBeenCalledWith(
+      expect.stringContaining('pg_advisory_xact_lock'),
+      expect.anything(),
+    );
+  });
+});
