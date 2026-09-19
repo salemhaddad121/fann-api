@@ -50,6 +50,11 @@ export function createMockQueryBuilder() {
   // can stub either name and the other still reflects the call.
   qb.del = qb.delete;
   qb.count = jest.fn(() => qb);
+  // Chainable like count(). Used where a row can appear more than once per
+  // subject — e.g. counting the bookers who answered the interests
+  // question, which is multi-select, so a plain count() would count picks
+  // rather than people.
+  qb.countDistinct = jest.fn(() => qb);
   qb.max = jest.fn(() => qb);
   qb.onConflict = jest.fn(() => qb);
   // Upsert: .onConflict(...).merge(...) — chainable, so the terminal
